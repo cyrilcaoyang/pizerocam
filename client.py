@@ -53,6 +53,7 @@ try:
 
         elif option == '2':
             print('Exiting')
+            exit()
         else:
             print("Invalid option. Please try again.")
 

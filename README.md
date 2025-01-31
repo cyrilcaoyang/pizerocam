@@ -1,4 +1,4 @@
-# Wirelesscamera_pizero
+# PizeroCam
 Use Raspberry Pi Zero 2W as a Server. Clients can request photo to be taken and sent over.
 
 # Wireless pi-camera module on Raspberry Pi Zero 2 WH (Server)

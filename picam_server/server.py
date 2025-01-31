@@ -1,41 +1,57 @@
-"""
-Please read the instruction.
-Please install the dependencies on Pi Zero 2 W/WH
-Code will not work on Pi 5
-"""
-import socket
-import time
+import os
+import sys
 import json
 import logging
+import socket
+from datetime import datetime
+from time import sleep
 from picamera2 import Picamera2
 from libcamera import controls
 from neopixel import NeoPixel
 from neopixel import board
 
+"""
+This is a module for the Raspberry Pi Camera Server
+Please read the instructions.
+Please install the dependencies ONLY on Pi Zero 2 W/WH
+Code will not work on Pi 5
+"""
+
 with open('server_settings.json', 'r') as file:
     data = json.load(file)
-    bufferSize = data["bufferSize"]
-    chunkSize = data["chunkSize"]
-    ServerPort = data["ServerPort"]
+    buffer_size = data["BufferSize"]
+    chunk_size = data["ChunkSize"]
+    server_port = data["ServerPort"]
 
 
-class WirelessCamera:
-    def __init__(self, host="0, 0, 0, 0", port=2222):
+class CameraServer:
+    """
+    This is a class of a server with ability to take photos on demand
+    """
+    def __init__(self, host="0, 0, 0, 0", port=server_port):
         self.host = host
         self.port = port
         self.logger = self.setup_logger()
         self.server_ip = self.get_server_ip()
-        self.server_socket = self.setup_socket()
         self.led = self.init_led()
-        self.picam2 = self.init_camera()
 
     @staticmethod
     def setup_logger():
-        logger = logging.getLogger('WirelessCameraLogger')
-        logger.setLevel(logging.INFO)
-        handler = logging.FileHandler('server.log')
-        handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+        # Create a directory to store logs
+        log_dir = 'logs'
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Generate a timestamped log filename
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        log_filename = os.path.join(log_dir, f"{timestamp}.log")
+
+        # Create the logger and file handler
+        logger = logging.getLogger("WirelessCameraLogger")
+        logger.setLevel(logging.DEBUG)
+        handler = logging.FileHandler(log_filename)
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         logger.addHandler(handler)
+        logger.addHandler(logging.StreamHandler(sys.stdout))
         return logger
 
     def get_server_ip(self):
@@ -46,20 +62,13 @@ class WirelessCamera:
         self.logger.info(f"My IP address is : {server_ip}")
         return server_ip
 
-    def setup_socket(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind((self.server_ip, self.port))
-        self.logger.info(f"Server started on {self.server_ip}:{self.port}")
-        server_socket.listen(5)
-        return server_socket
-
     def init_led(self):
         # NeoPixel LED RING with 12 pixels needs to use board.D10
         led = NeoPixel(board.D10, 12, auto_write=True)
 
         # Blink to show initialization
         led.fill((100, 100, 100))
-        time.sleep(3)
+        sleep(3)
         led.fill((0, 0, 0))
         self.logger.info("LED initialized!")
         return led
@@ -74,43 +83,161 @@ class WirelessCamera:
         self.logger.info("Camera initialized!")
         return picam2
 
-    def run(self):
-        self.logger.info("Running the server...")
+    def take_photo(self):
+        """
+
+        :return: the absolute path of the photo
+        """
+        # Create a directory to store logs
+        photo_dir = 'photos'
+        os.makedirs(photo_dir, exist_ok=True)
+
+        # Generate a timestamped image path
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
+
+        # Turn on the LED, take a photo, and turn off LED
+        self.led.fill((255, 255, 255))
+        picam2 = self.init_camera()
+        sleep(2)
+        picam2.capture_file(img_path)
+        sleep(2)
+        self.logger.info(f"Photo captured and saved as {img_path}")
+        self.led.fill((0, 0, 0))
+        picam2.close()
+        return img_path
+
+    def _recv_until_newline(self, conn):
+        """
+        Helper: Read bytes from 'conn' until we encounter a newline (b'\\n').
+        Returns the line as a string (minus the newline).
+        """
+        data_chunks = []
+        while True:
+            chunk = conn.recv(1)
+            if not chunk:
+                # Connection closed or error
+                return ""
+            if chunk == b'\n':
+                break
+            data_chunks.append(chunk)
+        return b''.join(data_chunks).decode('utf-8')
+
+    def _send_ascii_length(self, conn, value):
+        """
+        Helper: Sends the integer 'value' as ASCII digits followed by a newline.
+        """
+        message = f"{value}\n"
+        conn.sendall(message.encode("utf-8"))
+
+    def send_photo(self, conn, img_path):
+        """
+
+        :param conn:
+        :param img_path:
+        :return: Boolean
+        """
+
+        # Read the entire file into memory:
+        with open(img_path, 'rb') as f:
+            image_data = f.read()
+        file_size = len(image_data)
+
+        # 1) Send size as ASCII plus newline
+        self._send_ascii_length(conn, file_size)
+        self.logger.info(f"Sent file size {file_size} (ASCII + delimiter) to client")
+
+        # 2) Receive the echoed size back (as ASCII + newline)
+        echoed_size_str = self._recv_until_newline(conn)
+        if not echoed_size_str:
+            self.logger.error("Failed to receive echoed size from client (connection closed).")
+            return False
+
+        # Try to parse it into an integer
+        try:
+            echoed_size = int(echoed_size_str)
+        except ValueError:
+            self.logger.error(f"Invalid size echoed: '{echoed_size_str}'")
+            return False
+
+        self.logger.info(f"Client echoed size: {echoed_size}")
+
+        # 3) Confirm they match
+        if echoed_size != file_size:
+            self.logger.error("File size mismatch! Aborting transfer.")
+            return False
+        else:
+            self.logger.info("File size confirmed. Proceeding with file transfer.")
+
+        # 4) Send the file data in chunks
+        offset = 0
+        while offset < file_size:
+            end = offset + chunk_size
+            chunk = image_data[offset:end]
+            conn.sendall(chunk)
+            offset = end
+
+        self.logger.info("File transfer complete.")
+        self.logger.info("Waiting for new command...")
+
+    def handle_client(self, conn):
+        """
+        Handles connection after connected with client
+        :param conn:
+        :return: None
+        """
         try:
             while True:
-                # Accept the connection from client
-                client_socket, addr = self.server_socket.accept()
-                self.logger.debug(f"Accepted connection from {addr}")
-                msg = "Hi, I am Wireless PiCamera. Happy to be your Server!"
-                client_socket.send(msg.encode('utf-8'))
+                try:
+                    msg = conn.recv(buffer_size).decode('utf-8').strip()
+                    if not msg:
+                        break
+                    self.logger.info(f"Received message: {msg}")
 
-                # Get the message from the client
-                message, address = self.server_socket.recvfrom(bufferSize)
-                message = message.decode('utf-8')
-                self.logger.info(f"Client Address: {address[0]}")
-                self.logger.info(f"Message Received: {message}")
+                    if msg == "TAKE_PHOTO":
+                        image_path = self.take_photo()
+                        self.send_photo(conn, image_path)
+                    else:
+                        conn.sendall(f"Unknown command: {msg}".encode('utf-8'))
 
-                if message == "TAKE_PHOTO":
-                    # Define the image file path
-                    image_path = 'image.jpg'
-                    self.led.fill((255, 255, 255))
-                    time.sleep(5)
-                    self.picam2.capture_file(image_path)
-                    self.logger.info(f"Photo captured and saved as {image_path}")
-                    self.led.fill((0, 0, 0))
+                except (ConnectionResetError, BrokenPipeError):
+                    self.logger.error("Client disconnected unexpectedly")
+                    break
 
-                    # Read the image file as binary data
-                    with open(image_path, 'rb') as file:
-                        image_data = file.read()
-                        image_size = len(image_data)
-
-                    # Send the size of the image
-                    self.server_socket.sendto(str(image_size).encode(), address)
-                    self.logger.info('Sending captured image...')
         except Exception as e:
-            self.logger.error(f"Error in run method: {e}")
+            self.logger.error(f"Handle client error: {e}")
+        finally:
+            conn.close()
+            self.logger.info("Client connection closed")
+            self.logger.info("Waiting for new connection")
+
+    def start_server(self):
+        # Initialize a socket object for IPv4 (AF_INET) using TCP (SOCK_STREAM)
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        try:
+            server_socket.bind((self.server_ip, self.port))
+            server_socket.listen(5)
+            self.logger.info(f"Server started on {self.server_ip}:{self.port}")
+            self.logger.info("Waiting for connection...")
+
+            while True:
+                try:
+                    # Accept the connection from client
+                    conn, addr = server_socket.accept()
+                    self.logger.info(f"Connected with address: {addr}")
+                    self.handle_client(conn)
+                except KeyboardInterrupt:
+                    self.logger.info("Server shutdown requested")
+                    break
+                except Exception as e:
+                    self.logger.error(f"Connection error: {e}")
+        finally:
+            server_socket.close()
+            self.logger.info("Server socket closed")
 
 
 if __name__ == "__main__":
-    camera = WirelessCamera()
-    camera.run()
+    camera = CameraServer()
+    camera.start_server()

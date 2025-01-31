@@ -1,5 +1,5 @@
 {
-  "bufferSize" : 2048,
-  "chunkSize" : 1024,
+  "BufferSize" : 2048,
+  "ChunkSize" : 1024,
   "ServerPort" : 2222
 }

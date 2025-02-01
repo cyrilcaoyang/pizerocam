@@ -1,7 +1,6 @@
 import os
 import sys
 import json
-import logging
 import socket
 from datetime import datetime
 from time import sleep
@@ -9,10 +8,10 @@ from picamera2 import Picamera2
 from libcamera import controls
 from neopixel import NeoPixel
 from neopixel import board
+from sdl_utils import get_logger
 
 """
 This is a module for the Raspberry Pi Camera Server
-Please read the instructions.
 Please install the dependencies ONLY on Pi Zero 2 W/WH
 Code will not work on Pi 5
 """
@@ -37,21 +36,8 @@ class CameraServer:
 
     @staticmethod
     def setup_logger():
-        # Create a directory to store logs
-        log_dir = 'logs'
-        os.makedirs(log_dir, exist_ok=True)
-
-        # Generate a timestamped log filename
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_filename = os.path.join(log_dir, f"{timestamp}.log")
-
         # Create the logger and file handler
-        logger = logging.getLogger("WirelessCameraLogger")
-        logger.setLevel(logging.DEBUG)
-        handler = logging.FileHandler(log_filename)
-        handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
-        logger.addHandler(handler)
-        logger.addHandler(logging.StreamHandler(sys.stdout))
+        logger = get_logger("WirelessCameraLogger")
         return logger
 
     def get_server_ip(self):

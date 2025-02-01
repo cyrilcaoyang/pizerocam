@@ -1,3 +1,4 @@
 cv2==4.10.0
 numpy==2.2.1
 pytesseract==0.3.13
+sdl_utils==0.1.0

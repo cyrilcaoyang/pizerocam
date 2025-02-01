@@ -1,7 +1,8 @@
 import os
 import cv2
 import numpy as np
-import pytesseract, PIL
+import pytesseract
+import PIL
 from typing import List, Dict, Tuple, Any
 
 # Processing parameters

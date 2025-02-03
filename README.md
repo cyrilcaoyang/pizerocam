@@ -10,20 +10,20 @@ Clients can request photos to be taken and sent over.
      - bash pisugar-power-manager.sh -c release
      navigate to the link at the end of the installation to check battery status
 
-  2. Create a folder and put the Server code in this folder
+  2. Clone this repo; do not enter the project folder yet
     
-  3. Create a Python environment:
+  3. Create a Python environment outside of the project folder
      - python -m venv picam_env --system-site-packages"
-     Make sure to use the flag at the end, otherwise picamera2 will not work
+     # Make sure to use the flag at the end, otherwise picamera2 will not work
      
   5. Activate the venv
-      - source picam_env/bin/activate
+     - source picam_env/bin/activate
     
   6. Install the LED driver code
-     - sudo pip3 install adafruit-circuitpython-neopixel
+     - pip3 install adafruit-circuitpython-neopixel
      
-  7. Now you are ready to start the server
-     python client.py
+  7. You do not need to pip install, just navigate to the server.py code and start the server
+     python server.py
 
 # Installing of the Client on the PC that runs the workflows (Client)
   1. Install the required packages on PC: 

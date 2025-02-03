@@ -13,11 +13,11 @@ Clients can request photos to be taken and sent over.
   2. Create a folder and put the Server code in this folder
     
   3. Create a Python environment:
-     - python -m venv .venv --system-site-packages"
+     - python -m venv picam_env --system-site-packages"
      Make sure to use the flag at the end, otherwise picamera2 will not work
      
   5. Activate the venv
-      - source .venv/bin/activate
+      - source picam_env/bin/activate
     
   6. Install the LED driver code
      - sudo pip3 install adafruit-circuitpython-neopixel

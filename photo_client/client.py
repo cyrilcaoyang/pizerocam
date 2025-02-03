@@ -86,8 +86,9 @@ class ImageClient:
                 self.logger.info("Connected to server")
 
             # Catch exceptions
-            except s.timeout:
-                self.logger.debug("Connection timed out after 10 seconds.")
+            except ConnectionError:
+                self.logger.info("Connection timed out after 10 seconds.")
+                return
 
             while True:
                 print("Options:")

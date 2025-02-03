@@ -13,7 +13,7 @@ from sdl_utils import get_logger
 """
 This is a module for the Raspberry Pi Camera Server
 Please install the dependencies ONLY on Pi Zero 2 W/WH
-Code will not work on Pi 5
+Code will NOT work on Pi 5
 """
 
 with open('server_settings.json', 'r') as file:

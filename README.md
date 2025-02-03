@@ -14,7 +14,7 @@ Clients can request photos to be taken and sent over.
     
   3. Create a Python environment outside of the project folder
      - python -m venv picam_env --system-site-packages"
-     # Make sure to use the flag at the end, otherwise picamera2 will not work
+     Make sure to use the flag at the end, otherwise picamera2 will not work
      
   5. Activate the venv
      - source picam_env/bin/activate

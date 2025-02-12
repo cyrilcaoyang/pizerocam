@@ -93,8 +93,9 @@ class ImageClient:
             while True:
                 print("Options:")
                 print("1. Request photo")
-                print("2. Exit")
-                option = input("Enter your choice: ")
+                print("2. Change LED color")
+                print("3. Exit")
+                option = input("Enter your choice: ").strip()
 
                 if option == "1":
                     try:
@@ -108,13 +109,60 @@ class ImageClient:
                         else:
                             self.logger.info("Failed to receive complete photo")
 
-                        image = Image.open(image_path)
-                        image.show()
+                        # image = Image.open(image_path)
+                        # image.show()
                         continue
                     except Exception as e:
                         print(f"Error during photo request: {e}")
 
                 elif option == '2':
+                    try:
+                        # Send color change request
+                        s.sendall("CHANGE_COLOR".encode('utf-8'))
+
+                        # Wait for server's RGB request
+                        response = s.recv(buffer_size).decode('utf-8').strip()
+
+                        if response == "PLEASE SEND RGB":
+                            while True:
+                                rgb_input = input("Enter RGB values (0-255) as R,G,B: ").strip()
+                                parts = rgb_input.split(',')
+
+                                if len(parts) != 3:
+                                    print("Invalid format. Please use R,G,B format")
+                                    continue
+
+                                try:
+                                    r = int(parts[0])
+                                    g = int(parts[1])
+                                    b = int(parts[2])
+
+                                    if not all(0 <= val <= 255 for val in (r, g, b)):
+                                        print("Values must be between 0-255")
+                                        continue
+
+                                    # Send validated RGB values
+                                    s.sendall(f"{r},{g},{b}".encode('utf-8'))
+                                    break
+
+                                except ValueError:
+                                    print("Invalid input. Please enter integers only")
+                                    continue
+
+                            # Get final response from server
+                            result = s.recv(buffer_size).decode('utf-8').strip()
+                            if result == "COLOR_CHANGED":
+                                print("Successfully changed LED color!")
+                            else:
+                                print(f"Error changing color: {result}")
+
+                        else:
+                            print(f"Unexpected server response: {response}")
+
+                    except Exception as e:
+                        print(f"Error during color change: {e}")
+
+                elif option =='3':
                     self.logger.info('Exiting')
                     s.close()
                     break

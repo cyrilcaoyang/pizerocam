@@ -54,7 +54,7 @@ class CameraServer:
 
         # Blink to show initialization
         led.fill((100, 100, 100))
-        sleep(3)
+        sleep(1)
         led.fill((0, 0, 0))
         self.logger.info("LED initialized!")
         return led
@@ -85,11 +85,12 @@ class CameraServer:
         # Turn on the LED, take a photo, and turn off LED
         self.led.fill((255, 255, 255))
         picam2 = self.init_camera()
-        sleep(2)
+        sleep(3)
         picam2.capture_file(img_path)
-        sleep(2)
+        sleep(5)
         self.logger.info(f"Photo captured and saved as {img_path}")
         self.led.fill((0, 0, 0))
+        sleep(1)
         picam2.close()
         return img_path
 
@@ -183,6 +184,26 @@ class CameraServer:
                     if msg == "TAKE_PHOTO":
                         image_path = self.take_photo()
                         self.send_photo(conn, image_path)
+
+                    elif msg == "CHANGE_COLOR":
+                        # Request color coordinates from client
+                        conn.sendall("PLEASE SEND RGB".encode('utf-8'))
+                        self.logger.info("Sent color request to client")
+
+                        # Receive and process RGB values
+                        rgb_data = conn.recv(buffer_size).decode('utf-8').strip()
+                        try:
+                            r, g, b = map(int, rgb_data.split(','))
+                            if all(0 <= val <= 255 for val in (r, g, b)):
+                                self.led.fill((r, g, b))
+                                sleep(1)
+                                conn.sendall("COLOR_CHANGED".encode('utf-8'))
+                                self.logger.info(f"LED color changed to ({r},{g},{b})")
+                            else:
+                                raise ValueError("Values out of range (0-255)")
+                        except Exception as e:
+                            conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
+                            self.logger.error(f"Invalid RGB values: {rgb_data}")
                     else:
                         conn.sendall(f"Unknown command: {msg}".encode('utf-8'))
 

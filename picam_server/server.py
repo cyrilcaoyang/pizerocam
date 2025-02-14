@@ -124,6 +124,7 @@ class CameraServer:
 
         try:
             # Turn on the LED, take a photo, and turn off LED
+            self.camera = self.init_camera()
             self.logger.info(f"The LED color will be {self.color}")
             self.led.fill(self.color)
             sleep(3)

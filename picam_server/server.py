@@ -53,7 +53,7 @@ class CameraServer:
     def init_led(self):
         # NeoPixel LED RING with 12 pixels needs to use board.D10
         led = NeoPixel(board.D10, 12, auto_write=True)
-
+        
         # Blink to show initialization
         led.fill((100, 100, 100))
         sleep(1)
@@ -126,8 +126,8 @@ class CameraServer:
             # Turn on the LED, take a photo, and turn off LED
             self.logger.info(f"The LED color will be {self.color}")
             self.led.fill(self.color)
+            sleep(3)
             self.camera.capture_file(img_path)
-            sleep(1)
             self.logger.info(f"Photo captured and saved as {img_path}")
             self.led.fill((0, 0, 0))
             self.camera.close()

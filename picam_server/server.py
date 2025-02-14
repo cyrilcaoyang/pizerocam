@@ -117,13 +117,11 @@ class CameraServer:
 
                 # Control LED
                 self.led.fill(self.color)
-                start_time = time.time()
 
                 # Camera operations
                 with self._single_camera_session() as cam:
                     # Wait for auto-exposure to settle
-                    while time.time() - start_time < 3:
-                        sleep(0.1)
+                    sleep(3)
                     cam.capture_file(img_path)
 
                 self.led.fill((0, 0, 0))

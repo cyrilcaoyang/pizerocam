@@ -34,6 +34,7 @@ class CameraServer:
         self.server_ip = self.get_server_ip()
         self.led = self.init_led()
         self.color = (200, 200, 200)
+        self.camera = self.init_camera()
 
     @staticmethod
     def setup_logger():
@@ -71,21 +72,44 @@ class CameraServer:
         self.logger.info("LED test done")
 
     def init_camera(self):
-        # Initialize the camera
-        picam2 = Picamera2()
-        picam2.configure(picam2.create_still_configuration())
-        picam2.start()
-        # Important to set autofocus
-        picam2.set_controls({"AfMode": controls.AfModeEnum.Continuous})
-        self.logger.info("Camera initialized!")
-        return picam2
+        # Initialize the camera with connectivity checks
+        try:
+            # Check for available cameras
+            cameras = Picamera2.global_camera_info()
+            if not cameras:
+                self.logger.error("No cameras detected! Check connection.")
+                raise RuntimeError("Camera not found")
+
+            self.logger.info(f"Found {len(cameras)} camera(s)")
+
+            # Initialize first available camera
+            self.camera = Picamera2(0)  # Explicitly use first camera
+            config = self.camera.create_still_configuration()
+            self.camera.configure(config)
+
+            # Verify camera can start
+            self.camera.start()
+            self.logger.info("Camera initialized successfully")
+
+            # Set autofocus if available
+            if 'AfMode' in self.camera.camera_controls:
+                self.camera.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+                self.logger.info("Autofocus enabled")
+            else:
+                self.logger.warning("Autofocus not supported")
+
+            return self.camera
+
+        except Exception as e:
+            self.logger.error(f"Camera initialization failed: {str(e)}")
+            self.logger.error("Possible causes:")
+            self.logger.error("1. Camera not properly connected")
+            self.logger.error("2. Camera not enabled in raspi-config")
+            self.logger.error("3. Hardware incompatibile")
+            raise  # Re-raise exception for upstream handling
 
     def take_photo(self):
-        """
-
-        :return: the absolute path of the photo
-        """
-        # Create a directory to store logs
+        # Create a directory to store photos
         photo_dir = 'photos'
         os.makedirs(photo_dir, exist_ok=True)
 
@@ -93,18 +117,25 @@ class CameraServer:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
 
-        # Turn on the LED, take a photo, and turn off LED
-        self.logger.info(f"The LED color will be {self.color}")
-        self.led.fill((255, 255, 255))
-        picam2 = self.init_camera()
-        sleep(1)
-        picam2.capture_file(img_path)
-        sleep(3)
-        self.logger.info(f"Photo captured and saved as {img_path}")
-        self.led.fill((0, 0, 0))
-        sleep(1)
-        picam2.close()
-        return img_path
+        # Take photo with camera connectivity check
+        if not self.camera:
+            self.logger.error("Cannot take photo - camera not initialized!")
+            return None
+
+        try:
+            # Turn on the LED, take a photo, and turn off LED
+            self.logger.info(f"The LED color will be {self.color}")
+            self.led.fill((255, 255, 255))
+            sleep(1)
+            self.camera.capture_file(img_path)
+            sleep(3)
+            self.logger.info(f"Photo captured and saved as {img_path}")
+            self.led.fill((0, 0, 0))
+            sleep(1)
+            picam2.close()
+            return img_path
+
+
 
     def _recv_until_newline(self, conn):
         """

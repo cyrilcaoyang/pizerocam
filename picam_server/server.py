@@ -112,7 +112,7 @@ class CameraServer:
 
     def take_photo(self):
         # Early return if not camera :)
-        if not self.camera():
+        if not self.init_camera():
             return None
 
         # Create a directory to store photos

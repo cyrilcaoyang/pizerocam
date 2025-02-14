@@ -126,12 +126,12 @@ class CameraServer:
             # Turn on the LED, take a photo, and turn off LED
             self.logger.info(f"The LED color will be {self.color}")
             self.led.fill((255, 255, 255))
-            sleep(1)
+            # sleep(1)
             self.camera.capture_file(img_path)
-            sleep(3)
+            sleep(1)
             self.logger.info(f"Photo captured and saved as {img_path}")
             self.led.fill((0, 0, 0))
-            sleep(1)
+            #sleep(1)
             self.camera.close()
             return img_path
         

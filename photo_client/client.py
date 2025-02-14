@@ -109,8 +109,8 @@ class ImageClient:
                         else:
                             self.logger.info("Failed to receive complete photo")
 
-                        # image = Image.open(image_path)
-                        # image.show()
+                        image = Image.open(image_path)
+                        image.show()
                         continue
                     except Exception as e:
                         print(f"Error during photo request: {e}")
@@ -162,7 +162,7 @@ class ImageClient:
                     except Exception as e:
                         print(f"Error during color change: {e}")
 
-                elif option =='3':
+                elif option == '3':
                     self.logger.info('Exiting')
                     s.close()
                     break

@@ -1,5 +1,5 @@
 {
-    "Server_IP": "172.31.34.195",
+    "Server_IP": "172.31.35.47",
     "ServerPort" : 2222,
     "BufferSize" : 2048,
     "ChunkSize" : 1024

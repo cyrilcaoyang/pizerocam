@@ -116,6 +116,7 @@ class CameraServer:
         # Generate a timestamped image path
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
+        self.camera = self.init_camera()
 
         # Take photo with camera connectivity check
         if not self.camera:
@@ -124,7 +125,6 @@ class CameraServer:
 
         try:
             # Turn on the LED, take a photo, and turn off LED
-            self.camera = self.init_camera()
             self.logger.info(f"The LED color will be {self.color}")
             self.led.fill(self.color)
             sleep(3)

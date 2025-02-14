@@ -31,7 +31,7 @@ class CameraServer:
     def __init__(self, host="0,0,0,0", port=server_port):
         self.host = host
         self.port = port
-        self.logger = self.setup_logger()
+        self.logger = self._setup_logger()
         self.server_ip = self.get_server_ip()
         self.led = self.init_led()
         self.color = (200, 200, 200)

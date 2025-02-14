@@ -59,6 +59,15 @@ class CameraServer:
         self.logger.info("LED initialized!")
         return led
 
+    def test_led(self, led):
+        self.logger.info("Start testing LED")
+        for color in [(255,0,0), (0,255,0), (0,0,255)]:
+            for i in range(0, 12):
+                led.fill((0,0,0))
+                led[i] = color
+                sleep(0.1)
+        self.logger.info("LED test done")
+
     def init_camera(self):
         # Initialize the camera
         picam2 = Picamera2()
@@ -247,4 +256,5 @@ class CameraServer:
 
 if __name__ == "__main__":
     camera = CameraServer()
+    camera.test_led(camera.led)
     camera.start_server()

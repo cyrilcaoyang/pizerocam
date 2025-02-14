@@ -259,14 +259,14 @@ class CameraServer:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         try:
-            server_socket.bind((self.server_ip, self.port))
-            server_socket.listen(5)
+            server.bind((self.server_ip, self.port))
+            server.listen(5)
             self.logger.info(f"Server started on {self.server_ip}:{self.port}")
             self.logger.info("Waiting for connection...")
 
             while True:
                 # Accept the connection from client
-                conn, addr = server_socket.accept()
+                conn, addr = server.accept()
                 self.logger.info(f"Connected with address: {addr}")
                 threading.Thread(
                     target=self.handle_client,
@@ -277,7 +277,7 @@ class CameraServer:
         except KeyboardInterrupt:
             self.logger.info("Server shutdown requested")
         finally:
-            server_socket.close()
+            server.close()
             self.led.fill((0, 0, 0))
             self.logger.info("Server socket closed")
 

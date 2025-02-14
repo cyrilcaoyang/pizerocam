@@ -314,9 +314,9 @@ class CameraServer:
 
 
 if __name__ == "__main__":
-    camera = CameraServer()
-    camera.test_led(camera.led)
     try:
+        camera = CameraServer()
+        camera.test_led(camera.led)
         camera.start_server()
     except Exception as e:
         camera.logger.error(f"Critical failure: {e}")

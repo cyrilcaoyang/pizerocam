@@ -23,7 +23,7 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
 
   3. Clone this repo; 
      ```
-     clone https://github.com/cyrilcaoyang/pizerocam/
+     git clone https://github.com/cyrilcaoyang/pizerocam/
      ```
      DO NOT enter the project folder yet
      

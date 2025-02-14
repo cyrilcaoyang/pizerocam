@@ -132,7 +132,7 @@ class CameraServer:
             self.logger.info(f"Photo captured and saved as {img_path}")
             self.led.fill((0, 0, 0))
             sleep(1)
-            picam2.close()
+            self.camera.close()
             return img_path
         
         except Exception as e:

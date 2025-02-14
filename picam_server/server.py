@@ -35,31 +35,29 @@ class CameraServer:
         self.server_ip = self.get_server_ip()
         self.led = self.init_led()
         self.color = (200, 200, 200)
-        self.camera = None
+        self._camera_initialized = False
         self.camera_lock = threading.Lock()     # Add thread lock
 
     @staticmethod
-    def setup_logger():
+    def _setup_logger():
         # Create the logger and file handler
-        logger = get_logger("WirelessCameraLogger")
-        return logger
+        return get_logger("WirelessCameraLogger")
 
-    def get_server_ip(self):
-        # First, let us find out the IP address of this server
-        s_test = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s_test.connect(("8.8.8.8", 80))
-        server_ip = s_test.getsockname()[0]
-        self.logger.info(f"My IP address is : {server_ip}")
-        return server_ip
+    def _get_server_ip(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s_test:
+            s_test.connect(("8.8.8.8", 80))
+            server_ip = s_test.getsockname()[0]
+            self.logger.info(f"My IP address is : {server_ip}")
+            return server_ip
 
-    def init_led(self):
+    def _init_led(self):
         # NeoPixel LED RING with 12 pixels needs to use board.D10
         led = NeoPixel(board.D10, 12, auto_write=True)
-        
         # Blink to show initialization
-        led.fill((100, 100, 100))
-        sleep(1)
-        led.fill((0, 0, 0))
+        for i in range(0, 3):
+            led.fill((100, 100, 100))
+            sleep(0.5)
+            led.fill((0, 0, 0))
         self.logger.info("LED initialized!")
         return led
 
@@ -71,77 +69,74 @@ class CameraServer:
                 led[i] = color
                 sleep(0.1)
         led.fill((0, 0, 0))
-        self.logger.info("LED test done")
+        self.logger.info("LED test complete")
 
-    def init_camera(self):
-        # Initialize the camera with connectivity checks
-        try:
-            # Check for available cameras
-            cameras = Picamera2.global_camera_info()
-            if not cameras:
-                self.logger.error("No cameras detected! Check connection.")
-                raise RuntimeError("Camera not found")
+    def _single_camera_session(self):
+        """Context manager for camera operations"""
+        class CameraContext:
+            def __init__(self, outer):
+                self.outer = outer
+                self.picam = None
 
-            self.logger.info(f"Found {len(cameras)} camera(s)")
+            def __enter__(self):
+                self.outer.logger.debug("Initializing camera session")
+                self.picam = Picamera2(0)
+                config = self.picam.create_still_configuration()
+                self.picam.configure(config)
+                self.picam.start()
 
-            # Initialize first available camera
-            self.camera = Picamera2(0)  # Explicitly use first camera
-            config = self.camera.create_still_configuration()
-            self.camera.configure(config)
+                # Set autofocus if available
+                if 'AfMode' in self.picam.camera_controls:
+                    self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
 
-            # Verify camera can start
-            self.camera.start()
-            self.logger.info("Camera initialized successfully")
+                return self.picam
 
-            # Set autofocus if available
-            if 'AfMode' in self.camera.camera_controls:
-                self.camera.set_controls({"AfMode": controls.AfModeEnum.Continuous})
-                self.logger.info("Autofocus enabled")
-            else:
-                self.logger.warning("Autofocus not supported")
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                self.outer.logger.debug("Closing camera session")
+                try:
+                    self.picam.stop()
+                    self.picam.close()
+                except Exception as e:
+                    self.outer.logger.error(f"Error closing camera: {e}")
+                return False
 
-            return self.camera
-
-        except Exception as e:
-            self.logger.error(f"Camera initialization failed: {str(e)}")
-            self.logger.error("Possible causes:")
-            self.logger.error("1. Camera not properly connected")
-            self.logger.error("2. Camera not enabled in raspi-config")
-            self.logger.error("3. Hardware incompatibile")
-            raise  # Re-raise exception for upstream handling
+        return CameraContext(self)
 
     def take_photo(self):
-        # Early return if not camera :)
-        if not self.init_camera():
-            return None
-
-        # Create a directory to store photos
-        photo_dir = 'photos'
-        os.makedirs(photo_dir, exist_ok=True)
-
-        # Generate a timestamped image path
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
-
-        # Take photo with camera connectivity check
+        # New camera instance every time
         try:
-            # Capture photo using existing camera instance
             with self.camera_lock:
-                # Turn on the LED, take a photo, and turn off LED
-                self.logger.info(f"The LED color will be {self.color}")
+                # Create output directory
+                photo_dir = os.path.join(os.getcwd(), "photos")
+                os.makedirs(photo_dir, exist_ok=True)
+
+                # Generate filename
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename = f"capture_{timestamp}.jpg"
+                img_path = os.path.join(photo_dir, filename)
+
+                # Control LED
                 self.led.fill(self.color)
-                sleep(3)
-                self.camera.capture_file(img_path)
-                self.logger.info(f"Photo captured and saved as {img_path}")
+                start_time = time.time()
+
+                # Camera operations
+                with self._single_camera_session() as cam:
+                    # Wait for auto-exposure to settle
+                    while time.time() - start_time < 3:
+                        sleep(0.1)
+                    cam.capture_file(img_path)
+
                 self.led.fill((0, 0, 0))
-                self.camera.close()
+                self.logger.info(f"Captured {filename}")
                 return img_path
+
         except Exception as e:
-            self.logger.error(f"Failed to take photo: {str(e)}")
+            self.logger.error(f"Capture failed: {e}")
+            self.led.fill((0, 0, 0))
             return None
 
     @staticmethod
-    def _recv_until_newline(self, conn):
+    def _recv_until_newline(conn):
         """
         Helper: Read bytes from 'conn' until we encounter a newline (b'\\n').
         Returns the line as a string (minus the newline).
@@ -158,7 +153,7 @@ class CameraServer:
         return b''.join(data_chunks).decode('utf-8')
 
     @staticmethod
-    def _send_ascii_length(self, conn, value):
+    def _send_ascii_length(conn, value):
         """
         Helper: Sends the integer 'value' as ASCII digits followed by a newline.
         """
@@ -216,56 +211,40 @@ class CameraServer:
         self.logger.info("Waiting for new command...")
 
     def handle_client(self, conn):
-        """
-        Handles connection after connected with client
-        :param conn:
-        :return: None
-        """
+        """Handle client connection in a thread-safe manner"""
         try:
             while True:
-                try:
-                    msg = conn.recv(buffer_size).decode('utf-8').strip()
-                    if not msg:
-                        break
-                    self.logger.info(f"Received message: {msg}")
+                msg = conn.recv(buffer_size).decode('utf-8').strip()
+                if not msg:
+                    break
+                self.logger.info(f"Received message: {msg}")
 
-                    if msg == "TAKE_PHOTO":
-                        image_path = self.take_photo()
+                if msg == "TAKE_PHOTO":
+                    image_path = self.take_photo()
+                    if image_path:
                         self.send_photo(conn, image_path)
 
-                    elif msg == "CHANGE_COLOR":
-                        # Request color coordinates from client
-                        conn.sendall("PLEASE SEND RGB".encode('utf-8'))
-                        self.logger.info("Sent color request to client")
+                elif msg == "CHANGE_COLOR":
+                    # Request color coordinates from client
+                    conn.sendall("PLEASE SEND RGB".encode('utf-8'))
+                    self.logger.info("Sent color request to client")
 
-                        # Receive and process RGB values
-                        rgb_data = conn.recv(buffer_size).decode('utf-8').strip()
-                        try:
-                            r, g, b = map(int, rgb_data.split(','))
-                            if all(0 <= val <= 255 for val in (r, g, b)):
-                                self.color = (r, g, b)
-                                self.led.fill(self.color)
-                                sleep(1)
-                                self.led.fill((0, 0, 0))
-                                conn.sendall("COLOR_CHANGED".encode('utf-8'))
-                                self.logger.info(f"LED color changed to ({r},{g},{b})")
-                            else:
-                                raise ValueError("Values out of range (0-255)")
-                        except Exception as e:
-                            conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
-                            self.logger.error(f"Invalid RGB values: {rgb_data}")
-
-                    elif msg == "RESET_CAMERA":
-                        self.shutdown()
-                        success = self.initialize_camera()
-                        conn.sendall(f"Camera reset {'successful' if success else 'failed'}".encode())
-                    
-                    else:
-                        conn.sendall(f"Unknown command: {msg}".encode('utf-8'))
-
-                except (ConnectionResetError, BrokenPipeError):
-                    self.logger.error("Client disconnected unexpectedly")
-                    break
+                    # Receive and process RGB values
+                    rgb_data = conn.recv(buffer_size).decode('utf-8').strip()
+                    try:
+                        r, g, b = map(int, rgb_data.split(','))
+                        if all(0 <= val <= 255 for val in (r, g, b)):
+                            self.color = (r, g, b)
+                            self.led.fill(self.color)
+                            sleep(1)
+                            self.led.fill((0, 0, 0))
+                            conn.sendall("COLOR_CHANGED".encode('utf-8'))
+                            self.logger.info(f"LED color changed to ({r},{g},{b})")
+                        else:
+                            raise ValueError("Values out of range (0-255)")
+                    except Exception as e:
+                        conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
+                        self.logger.error(f"Invalid RGB values: {rgb_data}")
 
         except Exception as e:
             self.logger.error(f"Handle client error: {e}")
@@ -275,14 +254,9 @@ class CameraServer:
             self.logger.info("Waiting for new connection")
 
     def start_server(self):
-        # Make sure that camera can start
-        if not self.init_camera():
-            self.logger.error("Failed to initialize camera.")
-            return
-
-        # Initialize a socket object for IPv4 (AF_INET) using TCP (SOCK_STREAM)
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        """Start the server with clean error handling"""
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         try:
             server_socket.bind((self.server_ip, self.port))
@@ -291,34 +265,24 @@ class CameraServer:
             self.logger.info("Waiting for connection...")
 
             while True:
-                try:
-                    # Accept the connection from client
-                    conn, addr = server_socket.accept()
-                    self.logger.info(f"Connected with address: {addr}")
-                    self.handle_client(conn)
-                except KeyboardInterrupt:
-                    self.logger.info("Server shutdown requested")
-                    break
-                except Exception as e:
-                    self.logger.error(f"Connection error: {e}")
+                # Accept the connection from client
+                conn, addr = server_socket.accept()
+                self.logger.info(f"Connected with address: {addr}")
+                threading.Thread(
+                    target=self.handle_client,
+                    args=(conn,),
+                    daemon=True
+                ).start()
+
+        except KeyboardInterrupt:
+            self.logger.info("Server shutdown requested")
         finally:
             server_socket.close()
+            self.led.fill((0, 0, 0))
             self.logger.info("Server socket closed")
-
-    def shutdown(self):
-        with self.camera_lock:
-            if self.camera is not None:
-                self.camera.close()
-                self.camera = None
-        self.led.fill((0, 0, 0))
 
 
 if __name__ == "__main__":
-    try:
-        camera = CameraServer()
-        camera.test_led(camera.led)
-        camera.start_server()
-    except Exception as e:
-        camera.logger.error(f"Critical failure: {e}")
-    finally:
-        camera.shutdown()
+    camera = CameraServer()
+    camera.test_led(camera.led)
+    camera.start_server()

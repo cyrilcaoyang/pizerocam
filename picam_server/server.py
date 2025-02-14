@@ -80,7 +80,7 @@ class CameraServer:
         self.logger.info("Camera initialized!")
         return picam2
 
-    def take_photo(self, color):
+    def take_photo(self):
         """
 
         :return: the absolute path of the photo
@@ -94,11 +94,12 @@ class CameraServer:
         img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
 
         # Turn on the LED, take a photo, and turn off LED
-        self.led.fill(color)
+        self.logger.info(f"The LED color will be {self.color}")
+        self.led.fill(self.color)
         picam2 = self.init_camera()
-        sleep(3)
+        sleep(1)
         picam2.capture_file(img_path)
-        sleep(5)
+        sleep(3)
         self.logger.info(f"Photo captured and saved as {img_path}")
         self.led.fill((0, 0, 0))
         sleep(1)
@@ -193,7 +194,7 @@ class CameraServer:
                     self.logger.info(f"Received message: {msg}")
 
                     if msg == "TAKE_PHOTO":
-                        image_path = self.take_photo(self.color)
+                        image_path = self.take_photo()
                         self.send_photo(conn, image_path)
 
                     elif msg == "CHANGE_COLOR":
@@ -207,7 +208,7 @@ class CameraServer:
                             r, g, b = map(int, rgb_data.split(','))
                             if all(0 <= val <= 255 for val in (r, g, b)):
                                 self.color = (r, g, b)
-                                self.led.fill((r, g, b))
+                                self.led.fill(self.color)
                                 sleep(1)
                                 self.led.fill((0, 0, 0))
                                 conn.sendall("COLOR_CHANGED".encode('utf-8'))

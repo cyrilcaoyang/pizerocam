@@ -95,7 +95,7 @@ class CameraServer:
 
         # Turn on the LED, take a photo, and turn off LED
         self.logger.info(f"The LED color will be {self.color}")
-        self.led.fill(self.color)
+        self.led.fill((255, 255, 255))
         picam2 = self.init_camera()
         sleep(1)
         picam2.capture_file(img_path)

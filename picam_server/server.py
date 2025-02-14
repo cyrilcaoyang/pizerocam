@@ -122,7 +122,6 @@ class CameraServer:
         # Generate a timestamped image path
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         img_path = os.path.join(photo_dir, f"{timestamp}.jpg")
-        self.camera = self.init_camera()
 
         # Take photo with camera connectivity check
         try:

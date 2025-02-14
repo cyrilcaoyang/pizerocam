@@ -32,7 +32,7 @@ class CameraServer:
         self.host = host
         self.port = port
         self.logger = self._setup_logger()
-        self.server_ip = self.get_server_ip()
+        self.server_ip = self._get_server_ip()
         self.led = self.init_led()
         self.color = (200, 200, 200)
         self._camera_initialized = False

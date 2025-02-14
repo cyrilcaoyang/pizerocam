@@ -111,7 +111,7 @@ class CameraServer:
             raise  # Re-raise exception for upstream handling
 
     def take_photo(self):
-        # Early return :)
+        # Early return if not camera :)
         if not self.camera():
             return None
 

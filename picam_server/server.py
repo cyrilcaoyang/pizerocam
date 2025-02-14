@@ -61,11 +61,12 @@ class CameraServer:
 
     def test_led(self, led):
         self.logger.info("Start testing LED")
-        for color in [(255,0,0), (0,255,0), (0,0,255)]:
+        for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]:
             for i in range(0, 12):
-                led.fill((0,0,0))
+                led.fill((0, 0, 0))
                 led[i] = color
                 sleep(0.1)
+        led.fill((0, 0, 0))
         self.logger.info("LED test done")
 
     def init_camera(self):

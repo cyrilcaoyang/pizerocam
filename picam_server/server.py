@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import socket
+import threading
 from datetime import datetime
 from time import sleep
 from picamera2 import Picamera2
@@ -27,14 +28,15 @@ class CameraServer:
     """
     This is a class of a server with ability to take photos on demand
     """
-    def __init__(self, host="0, 0, 0, 0", port=server_port):
+    def __init__(self, host="0,0,0,0", port=server_port):
         self.host = host
         self.port = port
         self.logger = self.setup_logger()
         self.server_ip = self.get_server_ip()
         self.led = self.init_led()
         self.color = (200, 200, 200)
-        self.camera = self.init_camera()
+        self.camera = None
+        self.camera_lock = threading.Lock()     # Add thread lock
 
     @staticmethod
     def setup_logger():
@@ -109,6 +111,10 @@ class CameraServer:
             raise  # Re-raise exception for upstream handling
 
     def take_photo(self):
+        # Early return :)
+        if not self.init_camera():
+            return None
+
         # Create a directory to store photos
         photo_dir = 'photos'
         os.makedirs(photo_dir, exist_ok=True)
@@ -119,27 +125,23 @@ class CameraServer:
         self.camera = self.init_camera()
 
         # Take photo with camera connectivity check
-        if not self.camera:
-            self.logger.error("Cannot take photo - camera not initialized!")
-            return None
-
         try:
-            # Turn on the LED, take a photo, and turn off LED
-            self.logger.info(f"The LED color will be {self.color}")
-            self.led.fill(self.color)
-            sleep(3)
-            self.camera.capture_file(img_path)
-            self.logger.info(f"Photo captured and saved as {img_path}")
-            self.led.fill((0, 0, 0))
-            self.camera.close()
-            return img_path
-        
+            # Capture photo using existing camera instance
+            with self.camera_lock:
+                # Turn on the LED, take a photo, and turn off LED
+                self.logger.info(f"The LED color will be {self.color}")
+                self.led.fill(self.color)
+                sleep(3)
+                self.camera.capture_file(img_path)
+                self.logger.info(f"Photo captured and saved as {img_path}")
+                self.led.fill((0, 0, 0))
+                self.camera.close()
+                return img_path
         except Exception as e:
             self.logger.error(f"Failed to take photo: {str(e)}")
             return None
-        finally:
-            self.led.fill((0, 0, 0))
 
+    @staticmethod
     def _recv_until_newline(self, conn):
         """
         Helper: Read bytes from 'conn' until we encounter a newline (b'\\n').
@@ -156,6 +158,7 @@ class CameraServer:
             data_chunks.append(chunk)
         return b''.join(data_chunks).decode('utf-8')
 
+    @staticmethod
     def _send_ascii_length(self, conn, value):
         """
         Helper: Sends the integer 'value' as ASCII digits followed by a newline.
@@ -252,6 +255,12 @@ class CameraServer:
                         except Exception as e:
                             conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
                             self.logger.error(f"Invalid RGB values: {rgb_data}")
+
+                    elif msg == "RESET_CAMERA":
+                        self.shutdown()
+                        success = self.initialize_camera()
+                        conn.sendall(f"Camera reset {'successful' if success else 'failed'}".encode())
+                    
                     else:
                         conn.sendall(f"Unknown command: {msg}".encode('utf-8'))
 
@@ -267,6 +276,11 @@ class CameraServer:
             self.logger.info("Waiting for new connection")
 
     def start_server(self):
+        # Make sure that camera can start
+        if not self.init_camera():
+            self.logger.error("Failed to initialize camera.")
+            return
+
         # Initialize a socket object for IPv4 (AF_INET) using TCP (SOCK_STREAM)
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -292,8 +306,20 @@ class CameraServer:
             server_socket.close()
             self.logger.info("Server socket closed")
 
+    def shutdown(self):
+        with self.camera_lock:
+            if self.camera is not None:
+                self.camera.close()
+                self.camera = None
+        self.led.fill((0, 0, 0))
+
 
 if __name__ == "__main__":
     camera = CameraServer()
     camera.test_led(camera.led)
-    camera.start_server()
+    try:
+        camera.start_server()
+    except Exception as e:
+        camera.logger.error(f"Critical failure: {e}")
+    finally:
+        camera.shutdown()

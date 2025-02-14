@@ -94,7 +94,8 @@ class ImageClient:
                 print("Options:")
                 print("1. Request photo")
                 print("2. Change LED color")
-                print("3. Exit")
+                print("3. Reset the camera")
+                print("4. Exit")
                 option = input("Enter your choice: ").strip()
 
                 if option == "1":
@@ -163,6 +164,10 @@ class ImageClient:
                         print(f"Error during color change: {e}")
 
                 elif option == '3':
+                    # Send reset request
+                    s.sendall("RESET_CAMERA".encode('utf-8'))
+
+                elif option == '4':
                     self.logger.info('Exiting')
                     s.close()
                     break

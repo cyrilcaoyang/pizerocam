@@ -134,8 +134,12 @@ class CameraServer:
             sleep(1)
             picam2.close()
             return img_path
-
-
+        
+        except Exception as e:
+            self.logger.error(f"Failed to take photo: {str(e)}")
+            return None
+        finally:
+            self.led.fill((0, 0, 0))
 
     def _recv_until_newline(self, conn):
         """

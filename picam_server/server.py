@@ -19,7 +19,7 @@ Code will NOT work on Pi 5
 """
 
 with open('server_settings.yaml', 'r') as file:
-    data = json.safe_load(file)
+    data = yaml.safe_load(file)
     buffer_size = data["BufferSize"]
     chunk_size = data["ChunkSize"]
     server_port = data["ServerPort"]

@@ -1,15 +1,16 @@
 import os
-import json
 import socket
+import yaml
 from datetime import datetime
 from time import sleep
 from PIL import Image
 from sdl_utils import get_logger
-from sdl_utils import connect_socket, send_file_size, receive_file_size, receive_file
+from sdl_utils import connect_socket, send_file_name, receive_file_name
+from sdl_utils import send_file_size, receive_file_size, receive_file
 
 # Open and read the JSON file
-with open('client_settings.json', 'r') as file:
-    data = json.load(file)
+with open('client_settings.yaml', 'r') as file:
+    data = yaml.safe_load(file)
 server_ip = data['Server_IP']
 server_port = data['ServerPort']
 buffer_size = data['BufferSize']
@@ -52,49 +53,34 @@ class ImageClient:
         # Create the photos directory if it does not exist already
         output_dir = "photos"
         os.makedirs(output_dir, exist_ok=True)
+        
+        # Receive the image name and echo back to confirm
+        img_name = receive_file_name(sock, self.logger)
+        self.logger.info(f"Server sent file name {img_name}.")
+        send_file_name(sock, img_name, self.logger)
+        self.logger.info("Echoed the file name back to server.")
+        img_path = os.path.join(output_dir, img_name)
 
-        # Time stamp file name
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        img_path = os.path.join(output_dir, f"{timestamp}.jpg")
-
-        # Receive ASCII-based size until newline
+        # Receive ASCII-based file size  and echo back to confirm
         file_size = receive_file_size(sock, self.logger)
-        self.logger.info(f"Server reports file size: {file_size} bytes")
-
-        # Echo the size back to server (ASCII + newline)
+        self.logger.info(f"Server sent file size: {file_size} bytes.")
         send_file_size(sock, file_size, self.logger)
         self.logger.info("Echoed the file size back to server.")
 
         # Now receive the actual file data in chunks, and write the file to disk
-        received_data = receive_file(sock, chunk_size, file_size, self.logger)
-
+        received_data = receive_file(sock, file_size, chunk_size, self.logger)
         with open(img_path, "wb") as f:
             f.write(received_data)
-        self.logger.info(f"File saved to: {img_path}")
-
+        self.logger.info(f"File f{img_name} saved to: {output_dir}")
         return True, img_path
 
     def client_session(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                # Set a 10-second timeout BEFORE connecting, and attempt to connect to server
-                s.settimeout(10.0)
-                s.connect((server_ip, server_port))
-
-                # If successful, reset the timeout if desired to avoid timeout following actions
-                s.settimeout(None)
-                self.logger.info("Connected to server")
-
-            # Catch exceptions
-            except ConnectionError:
-                self.logger.info("Connection timed out after 10 seconds.")
-                return
-
+            if not connect_socket(s, server_ip, server_port, self.logger):
+                return  # Early return
+            
             while True:
-                print("Options:")
-                print("1. Request photo")
-                print("2. Change LED color")
-                print("3. Exit")
+                print("Options:\n1. Request photo\n2. Change LED color\n3. Exit")
                 option = input("Enter your choice: ").strip()
 
                 if option == "1":
@@ -172,4 +158,7 @@ class ImageClient:
 
 if __name__ == "__main__":
     client = ImageClient()
+    
+    # Please confirm that you have the right server IP address
+    client.update_server_ip()
     client.client_session()

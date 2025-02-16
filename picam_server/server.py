@@ -1,6 +1,7 @@
 import os
 import sys
-import json
+import path
+import yaml
 import socket
 import threading
 from datetime import datetime
@@ -9,7 +10,8 @@ from picamera2 import Picamera2
 from libcamera import controls
 from neopixel import NeoPixel
 from neopixel import board
-from sdl_utils import get_logger
+from sdl_utils import get_logger, send_file_name, receive_file_name
+from sdl_utils import send_file_size, receive_file_size, send_file
 
 """
 This is a module for the Raspberry Pi Camera Server
@@ -17,8 +19,8 @@ Please install the dependencies ONLY on Pi Zero 2 W/WH
 Code will NOT work on Pi 5
 """
 
-with open('server_settings.json', 'r') as file:
-    data = json.load(file)
+with open('server_settings.yaml', 'r') as file:
+    data = json.safe_load(file)
     buffer_size = data["BufferSize"]
     chunk_size = data["ChunkSize"]
     server_port = data["ServerPort"]
@@ -26,7 +28,8 @@ with open('server_settings.json', 'r') as file:
 
 class CameraServer:
     """
-    This is a class of a server with ability to take photos on demand
+    This is a class of a server with ability to take photos on demand with user-defined
+    LED backlight. The client can request photos and changing the LED backlight.
     """
     def __init__(self, host="0,0,0,0", port=server_port):
         self.host = host
@@ -34,13 +37,12 @@ class CameraServer:
         self.logger = self._setup_logger()
         self.server_ip = self._get_server_ip()
         self.led = self._init_led()
-        self.color = (200, 200, 200)
+        self.color = (200, 200, 200)    # Default LED configuration
         self._camera_initialized = False
-        self.camera_lock = threading.Lock()     # Add thread lock
+        self.camera_lock = threading.Lock()     # Thread lock
 
     @staticmethod
     def _setup_logger():
-        # Create the logger and file handler
         return get_logger("WirelessCameraLogger")
 
     def _get_server_ip(self):
@@ -51,8 +53,9 @@ class CameraServer:
             return server_ip
 
     def _init_led(self):
-        # NeoPixel LED RING with 12 pixels needs to use board.D10
+        # NeoPixel LED RING with 12 pixels MUST use board.D10
         led = NeoPixel(board.D10, 12, auto_write=True)
+
         # Blink to show initialization
         for i in range(0, 3):
             led.fill((100, 100, 100))
@@ -63,13 +66,14 @@ class CameraServer:
 
     def test_led(self, led):
         self.logger.info("Start testing LED")
-        for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]:
+        _ = input("Please watch for possible dead pixels. Press any key.")    # TODO: Possible
+        for color in [(255, 0, 0), (0, 255, 0), (0, 0, 255)]:
             for i in range(0, 12):
                 led.fill((0, 0, 0))
                 led[i] = color
                 sleep(0.1)
         led.fill((0, 0, 0))
-        self.logger.info("LED test complete")
+        self.logger.info("LED test complete.")
 
     def _single_camera_session(self):
         """Context manager for camera operations"""
@@ -88,7 +92,6 @@ class CameraServer:
                 # Set autofocus if available
                 if 'AfMode' in self.picam.camera_controls:
                     self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
-
                 return self.picam
 
             def __exit__(self, exc_type, exc_val, exc_tb):
@@ -99,11 +102,10 @@ class CameraServer:
                 except Exception as e:
                     self.outer.logger.error(f"Error closing camera: {e}")
                 return False
-
         return CameraContext(self)
 
     def take_photo(self):
-        # New camera instance every time
+        # This function will instantiate a new camera instance every time
         try:
             with self.camera_lock:
                 # Create output directory
@@ -115,15 +117,11 @@ class CameraServer:
                 filename = f"capture_{timestamp}.jpg"
                 img_path = os.path.join(photo_dir, filename)
 
-                # Control LED
+                # Camera and LED operations
                 self.led.fill(self.color)
-
-                # Camera operations
                 with self._single_camera_session() as cam:
-                    # Wait for auto-exposure to settle
-                    sleep(3)
+                    sleep(3)           # Wait for auto-exposure to settle
                     cam.capture_file(img_path)
-
                 self.led.fill((0, 0, 0))
                 self.logger.info(f"Captured {filename}")
                 return img_path
@@ -133,78 +131,61 @@ class CameraServer:
             self.led.fill((0, 0, 0))
             return None
 
-    @staticmethod
-    def _recv_until_newline(conn):
-        """
-        Helper: Read bytes from 'conn' until we encounter a newline (b'\\n').
-        Returns the line as a string (minus the newline).
-        """
-        data_chunks = []
-        while True:
-            chunk = conn.recv(1)
-            if not chunk:
-                # Connection closed or error
-                return ""
-            if chunk == b'\n':
-                break
-            data_chunks.append(chunk)
-        return b''.join(data_chunks).decode('utf-8')
-
-    @staticmethod
-    def _send_ascii_length(conn, value):
-        """
-        Helper: Sends the integer 'value' as ASCII digits followed by a newline.
-        """
-        message = f"{value}\n"
-        conn.sendall(message.encode("utf-8"))
-
     def send_photo(self, conn, img_path):
         """
-
+        Function to send filename, send file size, confirm file size, and send file
         :param conn:
-        :param img_path:
-        :return: Boolean
+        :param img_path: Absolute image path on the server
+        :return: False if failed
         """
-
         # Read the entire file into memory:
         with open(img_path, 'rb') as f:
             image_data = f.read()
         file_size = len(image_data)
+        file_name = path.basename(img_path)
 
-        # 1) Send size as ASCII plus newline
-        self._send_ascii_length(conn, file_size)
-        self.logger.info(f"Sent file size {file_size} (ASCII + delimiter) to client")
+        # Send the file name with newline
+        send_file_name(conn, file_name, self.logger)
+        self.logger.info(f"Sent file name {file_name}.")
 
-        # 2) Receive the echoed size back (as ASCII + newline)
+        # Confirm the echoed filename
+        echo_name = receive_file_name(conn, self.logger)
+        if not echo_name:
+            self.logger.error("Failed to receive echoed image name from client.")
+            return False
+        elif echo_name != file_name:
+            self.logger.error("File name mismatch! Aborting transfer.")
+            return False
+        else:
+            self.logger.info(f"Client confirmed image name {image_name}.")
+
+        # Send size plus newline
+        send_file_size(conn, file_size, self.logger)
+        self.logger.info(f"Sent file size {file_size} to client.")
+
+        # Receive the echoed size back and confirm
         echoed_size_str = self._recv_until_newline(conn)
         if not echoed_size_str:
             self.logger.error("Failed to receive echoed size from client (connection closed).")
             return False
-
-        # Try to parse it into an integer
         try:
-            echoed_size = int(echoed_size_str)
+            echoed_size = int(echoed_size_str)      # Try to parse it into an integer
+            if echoed_size != file_size:  # Confirm they match
+                self.logger.error("File size mismatch! Aborting transfer.")
+                return False
+            else:
+                self.logger.info("File size confirmed. Proceeding with file transfer.")
         except ValueError:
             self.logger.error(f"Invalid size echoed: '{echoed_size_str}'")
             return False
 
-        self.logger.info(f"Client echoed size: {echoed_size}")
-
-        # 3) Confirm they match
-        if echoed_size != file_size:
-            self.logger.error("File size mismatch! Aborting transfer.")
-            return False
-        else:
-            self.logger.info("File size confirmed. Proceeding with file transfer.")
-
-        # 4) Send the file data in chunks
+        # Send the file data in chunks
         offset = 0
         while offset < file_size:
             end = offset + chunk_size
             chunk = image_data[offset:end]
             conn.sendall(chunk)
             offset = end
-
         self.logger.info("File transfer complete.")
         self.logger.info("Waiting for new command...")
 

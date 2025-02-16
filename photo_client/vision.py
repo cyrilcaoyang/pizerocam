@@ -7,9 +7,13 @@ from typing import List, Dict, Tuple, Any
 
 # Processing parameters
 # Cropping parameters. Image will be cropped first
-startY, endY, startX, endX = 1200, 2200, 800, 3600
+startY, endY, startX, endX = 800, 2000, 1000, 4200
 width = (endX - startX) // 4
 height = (endY - startY) // 4
+
+# For Windows computers, do the following
+# Please instsll tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 
 def load_image(image_path: os.path):
@@ -39,21 +43,25 @@ def save_image(
 ):
     file_path = os.path.join(directory, file_name)
     cv2.imwrite(str(file_path), file)
+    print(f"Image saved as {file_path}.")
 
 
-def crop_enhance(
-        file: np.ndarray,
-        contrast: float,
-        brightness: int
-):
+def crop_image(
+    file: np.ndarray):
     # Define the cropping coordinates
     crop_box = file[startY:endY, startX:endX]
     crop_img = cv2.resize(crop_box, (width, height), interpolation=cv2.INTER_AREA)
-    print(f'Cropped and scaled to:({width}, {height}, 3)')
+    return crop_img
 
+
+def enhance_image(
+        crop_img: np.ndarray,
+        contrast: float,
+        brightness: int
+):
     # Enhance the image
-    alpha = contrast  # Contrast control (1.0-3.0)
-    beta = brightness  # Brightness control (0-100)
+    alpha = float(contrast)  # Contrast control (1.0-3.0)
+    beta = float(brightness)  # Brightness control (0-100)
     adjusted = cv2.convertScaleAbs(crop_img, alpha=alpha, beta=beta)
     return adjusted
 
@@ -82,7 +90,7 @@ def text_detection(file: np.ndarray):
         if num.isdigit() and (1 <= int(num) <= 14):
             # print(f"Number {num} found in the image, at ", f"position:({x},{y})")
             number_locations[num] = {
-                'coordinates': (x, y, w, h)
+                'coordinates': (int(x), int(y), int(w), int(h))
             }
     return grey, number_locations
 
@@ -91,16 +99,21 @@ def capture_colors(
         file: np.ndarray,
         num_locations):
 
-    (n, W, H) = (0, 0, 0)
+    (W, H) = (0, 0)
+
+    # Get the average size of the numbers
+    n = len(num_locations)
+    if n == 0:
+        print('Nothing found!')
+        return file, {}
+
     for num in num_locations:
-        n += 1
         W += num_locations[num]['coordinates'][2]
         H += num_locations[num]['coordinates'][3]
 
-    # Get the average size of the numbers
     average_w = W//n
     average_h = H//n
-    print(f"OCR {average_w=}", f"{average_h=}")
+    print(f"OCR parameters {average_w=}", f"{average_h=}")
 
     for num in num_locations:
         roi_x1 = num_locations[num]['coordinates'][0]
@@ -145,36 +158,37 @@ def read_ph(
     read_roi = file[y1:y2, x1:x2]
     avg_color_per_row = np.average(read_roi, axis=0)
     avg_color = np.average(avg_color_per_row, axis=0)
-    print(f'The color of the ROI is {avg_color}')
+    print(f'The color of the ROI: ({int(avg_color[0])}, {int(avg_color[1])}, {int(avg_color[2])})')
 
     # Calculate the Euclidean distance between the ROI and all colors with known pH
     color_dist = {}
+    sorted_color_dist = {}
+    if len(num_locations) == 1:
+        return file, None
+
     for num in num_locations:
         num_color = num_locations[num]['color']
         color_dist[num] = np.linalg.norm(avg_color - num_color)
 
     sorted_color_dist = dict(sorted(color_dist.items(), key=lambda item: item[1]))
     closest_ph = list(sorted_color_dist.keys())[0]
-    print(f"{closest_ph=}")
+    print(f"***\nThe closest pH value is {closest_ph}.\n***")
 
     cv2.rectangle(file, (x1, y1), (x2, y2), (255, 0, 0), 2)
     return file, closest_ph
 
 
-def process_photo(image_path, contrast, brightness):
-    # Load the image
-    image = load_image(image_path)
-    directory, file_name = os.path.split(image_path)
-
+def label_photo(image, contrast, brightness):
     # Crop and enhance the image before detection
-    crop = crop_enhance(image, contrast, brightness)
-    grey, num_local = text_detection(crop)
-    save_image(grey, 'grey_' + file_name, directory)
+    crop = crop_image(image)
+    enhance = enhance_image(crop, contrast, brightness)
+    grey, num_local = text_detection(enhance)
 
-    marked_crop, num_local = capture_colors(crop, num_local)
-
-    read_ph(marked_crop, (50, 75), 25, num_local)
-    save_image(marked_crop, 'crop_' + file_name, directory)
+    if len(num_local) !=0:
+        marked_crop, num_local = capture_colors(crop, num_local)
+    else:
+        marked_crop =crop
+    return marked_crop, num_local
 
 
 def diff_image(
@@ -187,7 +201,8 @@ def diff_image(
     if img_dry.shape == img_wet.shape:
         diff = cv2.absdiff(img_dry, img_wet)
         grey_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-        enhance_diff = crop_enhance(grey_diff, 2.0, 0)
+        enhance_diff = enhance_image(grey_diff, 2.0, 0)
+
         # Save the result
         save_image(enhance_diff, 'diff_' + file_name, directory)
     else:
@@ -196,18 +211,32 @@ def diff_image(
 
 if __name__ == "__main__":
 
-    # for i in np.arange(1.0, 2.2, 0.01):
-    #     num_locations_wet = read_photo('examples/image-wet.jpg', round(i, 2), 0)
-    #     if len(num_locations_wet) >= 8:
-    #         num_locations_dry = read_photo('examples/image-dry.jpg', round(i, 2), 0)
-    #         if len(num_locations_dry) >= 8:
-    #             print('found', i, ' ', len(num_locations_dry), 'numbers')
-    #             # break
+    # process the wet photo
+    image_path = 'photos/2025-02-11_20-52-20.jpg'
+    image = load_image(image_path)
+    directory, file_name = os.path.split(image_path)
 
-    process_photo('examples/image-dry.jpg', 1.46, 0)
-    process_photo('examples/image-wet.jpg', 1.46, 0)
-    diff_image('examples/image-dry.jpg','examples/image-wet.jpg')
+    opt_contrast  = 0
+    opt_brightness = 0
+    max_num = 0
+    for j in range(0, 100, 5):
+        for i in range(100, 301, 5):
 
+            _, num_loc = label_photo(image, contrast=i / 100, brightness=j)
+            print(f"Trying contrast={i / 100}, brightness={j}, found {len(num_loc)} numbers")
 
+            if len(num_loc) >= max_num:
+                max_num = len(num_loc)
+                opt_contrast = i/100
+                opt_brightness = j
+            else: continue
 
+    print(
+        f"***\nThe optimal contrast for OCR is {opt_contrast}\n"
+        f"The optimal brightness for OCR is {opt_brightness}\n"
+        f"Up to {max_num} numbers recognized!\n***"
+    )
 
+    marked_crop, num_loc = label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
+    read_ph(marked_crop, (110, 110), 30, num_loc)
+    save_image(marked_crop, 'crop_' + file_name, directory)

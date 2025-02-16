@@ -10,7 +10,7 @@ from libcamera import controls
 from neopixel import NeoPixel
 from neopixel import board
 from sdl_utils import get_logger, send_file_name, receive_file_name
-from sdl_utils import send_file_size, receive_file_size, send_file
+from sdl_utils import send_file_size, receive_file_size
 
 """
 This is a module for the Raspberry Pi Camera Server

@@ -1,6 +1,5 @@
 import os
 import sys
-import path
 import yaml
 import socket
 import threading
@@ -142,7 +141,7 @@ class CameraServer:
         with open(img_path, 'rb') as f:
             image_data = f.read()
         file_size = len(image_data)
-        file_name = path.basename(img_path)
+        file_name = os.path.basename(img_path)
 
         # Send the file name with newline
         send_file_name(conn, file_name, self.logger)

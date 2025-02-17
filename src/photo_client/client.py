@@ -26,7 +26,7 @@ class ImageClient:
     This is a client that requests and receives images
     More to be added
     """
-    def __init__(self, host="0.0.0.0", port=server_port):
+    def __init__(self, host="0.0.0.0", port=server_port, logger=None):
         self.host = host
         self.port = port
         self.server_ip = server_ip
@@ -47,11 +47,12 @@ class ImageClient:
                 new_server_ip = input("What is the new ip address")
                 self.logger.info(f"IP address updated to {new_server_ip}")
                 self.server_ip = new_server_ip
-        return self.server_ip
+                break
 
     def receive_photo(self, sock):
         """
         :param sock:
+        :param photo_dir: the directory to save photos
         :return: absolute image path
         """
         # Create the photos directory if it does not exist already
@@ -78,7 +79,7 @@ class ImageClient:
         self.logger.info(f"File f{img_name} saved to: {output_dir}")
         return True, img_path
 
-    def client_session(self):
+    def interactive_client_session(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s = connect_socket(s, server_ip, server_port, self.logger)
             if s == None:
@@ -92,15 +93,11 @@ class ImageClient:
                         s.sendall("TAKE_PHOTO".encode('utf-8'))
                         sleep(10)
 
-                        # TODO also get the filename
                         success, image_path = self.receive_photo(s)
                         if success:
-                            self.logger.info("Photo received and saved as received_photo.jpg")
+                            self.logger.info(f"Photo received and saved as {image_path}")
                         else:
                             self.logger.info("Failed to receive complete photo")
-
-                        # image = Image.open(image_path)
-                        # image.show()
                         continue
                     except Exception as e:
                         print(f"Error during photo request: {e}")
@@ -135,7 +132,7 @@ class ImageClient:
                                     print("Invalid input. Please enter integers only")
                                     continue
 
-                            # Get final response from server
+                            # Get response from server
                             result = s.recv(buffer_size).decode('utf-8').strip()
                             if result == "COLOR_CHANGED":
                                 print("Successfully changed LED color!")
@@ -161,4 +158,4 @@ if __name__ == "__main__":
     
     # Please confirm that you have the right server IP address
     client.update_server_ip()
-    client.client_session()
+    client.interactive_client_session()

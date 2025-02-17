@@ -170,7 +170,7 @@ class CameraServer:
             else:
                 self.logger.info("File size confirmed. Proceeding with file transfer.")
         except ValueError:
-            self.logger.error(f"Invalid size echoed: '{echoed_size_str}'")
+            self.logger.error(f"Invalid size echoed: '{echoed_size_str}'.")
             return False
 
         # Send the file data in chunks
@@ -190,7 +190,7 @@ class CameraServer:
                 msg = conn.recv(buffer_size).decode('utf-8').strip()
                 if not msg:
                     break
-                self.logger.info(f"Received message: {msg}")
+                self.logger.info(f"Received message: {msg}.")
 
                 if msg == "TAKE_PHOTO":
                     image_path = self.take_photo()
@@ -200,7 +200,7 @@ class CameraServer:
                 elif msg == "CHANGE_COLOR":
                     # Request color coordinates from client
                     conn.sendall("PLEASE SEND RGB".encode('utf-8'))
-                    self.logger.info("Sent color request to client")
+                    self.logger.info("Sent color request to client.")
 
                     # Receive and process RGB values
                     rgb_data = conn.recv(buffer_size).decode('utf-8').strip()
@@ -212,19 +212,19 @@ class CameraServer:
                             sleep(1)
                             self.led.fill((0, 0, 0))
                             conn.sendall("COLOR_CHANGED".encode('utf-8'))
-                            self.logger.info(f"LED color changed to ({r},{g},{b})")
+                            self.logger.info(f"LED color changed to ({r},{g},{b}).")
                         else:
-                            raise ValueError("Values out of range (0-255)")
+                            raise ValueError("Values out of range (0-255).")
                     except Exception as e:
                         conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
-                        self.logger.error(f"Invalid RGB values: {rgb_data}")
+                        self.logger.error(f"Invalid RGB values: {rgb_data}.")
 
         except Exception as e:
-            self.logger.error(f"Handle client error: {e}")
+            self.logger.error(f"Handle client error: {e}.")
         finally:
             conn.close()
-            self.logger.info("Client connection closed")
-            self.logger.info("Waiting for new connection")
+            self.logger.info("Client connection closed.")
+            self.logger.info("Waiting for new connection.")
 
     def start_server(self):
         """Start the server with clean error handling"""
@@ -234,13 +234,13 @@ class CameraServer:
         try:
             server.bind((self.server_ip, self.port))
             server.listen(5)
-            self.logger.info(f"Server started on {self.server_ip}:{self.port}")
+            self.logger.info(f"Server started on {self.server_ip}:{self.port}.")
             self.logger.info("Waiting for connection...")
 
             while True:
                 # Accept the connection from client
                 conn, addr = server.accept()
-                self.logger.info(f"Connected with address: {addr}")
+                self.logger.info(f"Connected with address: {addr}.")
                 threading.Thread(
                     target=self.handle_client,
                     args=(conn,),
@@ -248,11 +248,11 @@ class CameraServer:
                 ).start()
 
         except KeyboardInterrupt:
-            self.logger.info("Server shutdown requested")
+            self.logger.info("Server shutdown requested.")
         finally:
             server.close()
             self.led.fill((0, 0, 0))
-            self.logger.info("Server socket closed")
+            self.logger.info("Server socket closed.")
 
 
 if __name__ == "__main__":

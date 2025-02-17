@@ -140,27 +140,27 @@ class CameraServer:
         # Read the entire file into memory:
         with open(img_path, 'rb') as f:
             image_data = f.read()
-        file_size = len(image_data)
-        file_name = os.path.basename(img_path)
+        img_size = len(image_data)
+        img_name = os.path.basename(img_path)
 
         # Send the file name with newline
-        send_file_name(conn, file_name, self.logger)
-        self.logger.info(f"Sent file name {file_name}.")
+        send_file_name(conn, img_name, self.logger)
+        self.logger.info(f"Sent file name {img_name}.")
 
         # Confirm the echoed filename
         echo_name = receive_file_name(conn, self.logger)
         if not echo_name:
             self.logger.error("Failed to receive echoed image name from client.")
             return False
-        elif echo_name != file_name:
+        elif echo_name != img_name:
             self.logger.error("File name mismatch! Aborting transfer.")
             return False
         else:
             self.logger.info(f"Client confirmed image name {image_name}.")
 
         # Send size plus newline
-        send_file_size(conn, file_size, self.logger)
-        self.logger.info(f"Sent file size {file_size} to client.")
+        send_file_size(conn, img_size, self.logger)
+        self.logger.info(f"Sent file size {img_size} to client.")
 
         # Receive the echoed size back and confirm
         echoed_size_str = self._recv_until_newline(conn)
@@ -169,7 +169,7 @@ class CameraServer:
             return False
         try:
             echoed_size = int(echoed_size_str)      # Try to parse it into an integer
-            if echoed_size != file_size:  # Confirm they match
+            if echoed_size != img_size:  # Confirm they match
                 self.logger.error("File size mismatch! Aborting transfer.")
                 return False
             else:
@@ -180,7 +180,7 @@ class CameraServer:
 
         # Send the file data in chunks
         offset = 0
-        while offset < file_size:
+        while offset < img_size:
             end = offset + chunk_size
             chunk = image_data[offset:end]
             conn.sendall(chunk)

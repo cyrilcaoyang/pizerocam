@@ -76,9 +76,9 @@ class ImageClient:
 
     def client_session(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if not connect_socket(s, server_ip, server_port, self.logger):
-                return  # Early return
-            
+            s = connect_socket(s, server_ip, server_port, self.logger)
+            if s == None:
+                return
             while True:
                 print("Options:\n1. Request photo\n2. Change LED color\n3. Exit")
                 option = input("Enter your choice: ").strip()

@@ -82,7 +82,7 @@ class CameraServer:
         self.logger.info("Initializing camera session")
         cam = Picamera2(0)
         config = cam.create_still_configuration()
-        cam.config(config)
+        cam.configure(config)
         if 'AfMode' in cam.camera_controls:
             cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
         cam.start()

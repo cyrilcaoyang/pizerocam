@@ -2,14 +2,18 @@ import os
 import socket
 import yaml
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 from PIL import Image
 from sdl_utils import get_logger
 from sdl_utils import connect_socket, send_file_name, receive_file_name
 from sdl_utils import send_file_size, receive_file_size, receive_file
 
+# Get the directory where this script is located
+script_dir = Path(__file__).resolve().parent
+
 # Open and read the JSON file
-with open('client_settings.yaml', 'r') as file:
+with open(script_dir / 'client_settings.yaml', 'r') as file:
     data = yaml.safe_load(file)
 server_ip = data['Server_IP']
 server_port = data['ServerPort']

@@ -5,6 +5,7 @@ import socket
 import threading
 from datetime import datetime
 from time import sleep
+from pathlib import Path
 from picamera2 import Picamera2
 from libcamera import controls
 from neopixel import NeoPixel
@@ -18,7 +19,11 @@ Please install the dependencies ONLY on Pi Zero 2 W/WH
 Code will NOT work on Pi 5
 """
 
-with open('server_settings.yaml', 'r') as file:
+# Get the directory where this script is located
+script_dir = Path(__file__).resolve().parent
+
+# Open and read the JSON file
+with open(script_dir / 'server_settings.yaml', 'r') as file:
     data = yaml.safe_load(file)
     buffer_size = data["BufferSize"]
     chunk_size = data["ChunkSize"]

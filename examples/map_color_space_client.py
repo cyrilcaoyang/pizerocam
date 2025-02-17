@@ -121,4 +121,4 @@ if __name__ == "__main__":
     client.update_server_ip()
 
     # Intervals must be powers of 2, from 2 up to 256
-    color_mapping_session(interval=64, client=client)
+    color_mapping_session(interval=32, client=client)

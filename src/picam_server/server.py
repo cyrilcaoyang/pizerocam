@@ -1,5 +1,4 @@
 import os
-import sys
 import yaml
 import socket
 import threading
@@ -41,8 +40,8 @@ class CameraServer:
         self.logger = self._setup_logger()
         self.server_ip = self._get_server_ip()
         self.led = self._init_led()
+        self.cam = self._init_cam()
         self.color = (200, 200, 200)    # Default LED configuration
-        self._camera_initialized = False
         self.camera_lock = threading.Lock()     # Thread lock
 
     @staticmethod
@@ -79,34 +78,25 @@ class CameraServer:
         led.fill((0, 0, 0))
         self.logger.info("LED test complete.")
 
-    def _single_camera_session(self):
-        """Context manager for camera operations"""
-        class CameraContext:
-            def __init__(self, outer):
-                self.outer = outer
-                self.picam = None
+    def _init_cam(self):
+        self.logger.info("Initializing camera session")
+        cam = Picamera2(0)
+        config = cam.create_still_configuration()
+        cam.config(config)
+        if 'AfMode' in cam.camera_controls:
+            cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+        cam.start()
+        self.logger.info(f"Camera initiated.")
+        return cam
 
-            def __enter__(self):
-                self.outer.logger.debug("Initializing camera session")
-                self.picam = Picamera2(0)
-                config = self.picam.create_still_configuration()
-                self.picam.configure(config)
-                self.picam.start()
-
-                # Set autofocus if available
-                if 'AfMode' in self.picam.camera_controls:
-                    self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
-                return self.picam
-
-            def __exit__(self, exc_type, exc_val, exc_tb):
-                self.outer.logger.debug("Closing camera session")
-                try:
-                    self.picam.stop()
-                    self.picam.close()
-                except Exception as e:
-                    self.outer.logger.error(f"Error closing camera: {e}")
-                return False
-        return CameraContext(self)
+    def __del__(self):
+        """
+        Making sure the instance is destroyed when camera is closed
+        """
+        if hasattr(self, 'cam'):
+            self.cam.stop()
+            self.cam.close()
+            self.logger.info(f"Camera closed.")
 
     def take_photo(self):
         # This function will instantiate a new camera instance every time
@@ -124,9 +114,8 @@ class CameraServer:
 
                 # Camera and LED operations
                 self.led.fill(self.color)
-                with self._single_camera_session() as cam:
-                    sleep(3)           # Wait for auto-exposure to settle
-                    cam.capture_file(img_path)
+                sleep(3)           # Wait for auto-exposure to settle
+                self.cam.capture_file(img_path)
                 self.led.fill((0, 0, 0))
                 self.logger.info(f"Captured {filename}")
                 return img_path

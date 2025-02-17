@@ -163,7 +163,7 @@ class CameraServer:
         self.logger.info(f"Sent file size {img_size} to client.")
 
         # Receive the echoed size back and confirm
-        echoed_size_str = self._recv_until_newline(conn)
+        echoed_size_str = receive_file_size(conn, self.logger)
         if not echoed_size_str:
             self.logger.error("Failed to receive echoed size from client (connection closed).")
             return False

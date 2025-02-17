@@ -117,12 +117,8 @@ class ImageClient:
                                 if len(parts) != 3:
                                     print("Invalid format. Please use R,G,B format")
                                     continue
-
                                 try:
-                                    r = int(parts[0])
-                                    g = int(parts[1])
-                                    b = int(parts[2])
-
+                                    r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
                                     if not all(0 <= val <= 255 for val in (r, g, b)):
                                         print("Values must be between 0-255")
                                         continue

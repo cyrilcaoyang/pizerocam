@@ -1,2 +1,0 @@
-import photo_client
-import picam_server

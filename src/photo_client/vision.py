@@ -12,7 +12,7 @@ width = (endX - startX) // 4
 height = (endY - startY) // 4
 
 # For Windows computers, do the following
-# Please instsll tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
+# Please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 

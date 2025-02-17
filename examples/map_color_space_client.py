@@ -25,7 +25,7 @@ buffer_size = data['BufferSize']
 chunk_size = data['ChunkSize']
 
 def get_photo(
-        s,
+        conn,
         color_cord: list,
         client: ImageClient
 ):
@@ -38,10 +38,10 @@ def get_photo(
     :return:
     """
     # Send color change request
-    s.sendall("CHANGE_COLOR".encode('utf-8'))
+    conn.sendall("CHANGE_COLOR".encode('utf-8'))
 
     # Wait for server's RGB request
-    response = s.recv(buffer_size).decode('utf-8').strip()
+    response = conn.recv(buffer_size).decode('utf-8').strip()
     if response != "PLEASE SEND RGB":
         client.logger.error("Incorrect response from the server.")
         return
@@ -56,10 +56,10 @@ def get_photo(
             return
 
         # Send validated RGB values
-        s.sendall(f"{r},{g},{b}".encode('utf-8'))
+        conn.sendall(f"{r},{g},{b}".encode('utf-8'))
 
         # Get response from server
-        result = s.recv(buffer_size).decode('utf-8').strip()
+        result = conn.recv(buffer_size).decode('utf-8').strip()
         if result != "COLOR_CHANGED":
             client.logger.error(f"Error changing color: {result}")
             return
@@ -67,10 +67,9 @@ def get_photo(
 
         # Request photo
         try:
-            s.sendall("TAKE_PHOTO".encode('utf-8'))
-            sleep(10)
-
-            success, image_path = client.receive_photo(s)
+            conn.sendall("TAKE_PHOTO".encode('utf-8'))
+            sleep(3)
+            success, image_path = client.receive_photo(conn)
             if success:
                 client.logger.info(f"Photo received and saved as {image_path}")
             else:
@@ -122,4 +121,4 @@ if __name__ == "__main__":
     client.update_server_ip()
 
     # Intervals must be powers of 2, from 2 up to 256
-    color_mapping_session(interval=32, client=client)
+    color_mapping_session(interval=64, client=client)

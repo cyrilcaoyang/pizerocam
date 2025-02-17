@@ -156,7 +156,7 @@ class CameraServer:
             self.logger.error("File name mismatch! Aborting transfer.")
             return False
         else:
-            self.logger.info(f"Client confirmed image name {image_name}.")
+            self.logger.info(f"Client confirmed image name {img_name}.")
 
         # Send size plus newline
         send_file_size(conn, img_size, self.logger)

@@ -113,7 +113,7 @@ class CameraServer:
 
                 # Generate filename
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                color_cor = ''.join("{num:03d}" for num in self.color)
+                color_cor = ''.join(f"{num:03d}" for num in self.color)
                 filename = f"capture_{timestamp}_{color_cor}.jpg"
                 img_path = os.path.join(photo_dir, filename)
 

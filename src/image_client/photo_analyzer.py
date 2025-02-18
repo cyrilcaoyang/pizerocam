@@ -16,7 +16,7 @@ height = (endY - startY) // 4
 # Please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-class ImageAnalyser:
+class PhotoAnalyzer:
     def __init__(
             self,
             logger = None
@@ -36,9 +36,9 @@ class ImageAnalyser:
         """
         image = cv2.imread(image_path)
         if image is None:
-            print("Error: Image not found or unable to load.")
+            self.logger.error("Error: Image not found or unable to load.")
         else:
-            print(f"Image loaded from {image_path}.\nImage dimensions: {image.shape}")
+            self.logger.info(f"Image loaded from {image_path}.\nImage dimensions: {image.shape}")
         return image
 
     def view_image(self, file: np.ndarray):
@@ -119,7 +119,7 @@ class ImageAnalyser:
         # Get the average size of the numbers
         n = len(num_locations)
         if n == 0:
-            print('Nothing found!')
+            self.logger.info('Nothing found!')
             return file, {}
 
         for num in num_locations:
@@ -128,7 +128,7 @@ class ImageAnalyser:
 
         average_w = W//n
         average_h = H//n
-        print(f"OCR parameters {average_w=}", f"{average_h=}")
+        self.logger.info(f"OCR parameters {average_w=}, {average_h=}")
 
         for num in num_locations:
             roi_x1 = num_locations[num]['coordinates'][0]
@@ -144,9 +144,7 @@ class ImageAnalyser:
 
             # Highlight the number and region of interest (ROI) with a rectangle
             cv2.rectangle(file, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 255, 0), 2)
-
         return file, num_locations
-
 
     def read_ph(
             self,
@@ -174,7 +172,8 @@ class ImageAnalyser:
         read_roi = file[y1:y2, x1:x2]
         avg_color_per_row = np.average(read_roi, axis=0)
         avg_color = np.average(avg_color_per_row, axis=0)
-        print(f'The color of the ROI: ({int(avg_color[0])}, {int(avg_color[1])}, {int(avg_color[2])})')
+        self.logger.info(f'The color of the ROI:'
+                         f'({int(avg_color[0])}, {int(avg_color[1])}, {int(avg_color[2])})')
 
         # Calculate the Euclidean distance between the ROI and all colors with known pH
         color_dist = {}
@@ -188,7 +187,7 @@ class ImageAnalyser:
 
         sorted_color_dist = dict(sorted(color_dist.items(), key=lambda item: item[1]))
         closest_ph = list(sorted_color_dist.keys())[0]
-        print(f"***\nThe closest pH value is {closest_ph}.\n***")
+        self.logger.info(f"***\nThe closest pH value is {closest_ph}.\n***")
 
         cv2.rectangle(file, (x1, y1), (x2, y2), (255, 0, 0), 2)
         return file, closest_ph
@@ -201,14 +200,14 @@ class ImageAnalyser:
             brightness
     ):
         # Crop and enhance the image before detection
-        crop = crop_image(image)
-        enhance = enhance_image(crop, contrast, brightness)
-        grey, num_local = text_detection(enhance)
+        crop = self.crop_image(image)
+        enhance = self.enhance_image(crop, contrast, brightness)
+        grey, num_local = self.text_detection(enhance)
 
         if len(num_local) !=0:
-            marked_crop, num_local = capture_colors(crop, num_local)
+            marked_crop, num_local = self.capture_colors(crop, num_local)
         else:
-            marked_crop =crop
+            marked_crop = crop
         return marked_crop, num_local
 
 
@@ -223,14 +222,14 @@ class ImageAnalyser:
         if img_dry.shape == img_wet.shape:
             diff = cv2.absdiff(img_dry, img_wet)
             grey_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-            enhance_diff = enhance_image(grey_diff, 2.0, 0)
+            enhance_diff = self.enhance_image(grey_diff, 2.0, 0)
 
             # Save the result
-            save_image(enhance_diff, 'diff_' + file_name, directory)
+            self.save_image(enhance_diff, 'diff_' + file_name, directory)
         else:
-            print("Images are not the same size.")
+            self.logger.info("Images are not the same size.")
 
 
 if __name__ == "__main__":
-    analyser = ImageAnalyser()
+    analyser = PhotoAnalyzer()
 

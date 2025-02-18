@@ -30,5 +30,5 @@ authors = [
 ]
 
 [tool.setuptools.package-dir]
-photo_client = 'src/photo_client'
+image_client = 'src/image_client'
 picam_server = 'src/picam_server'

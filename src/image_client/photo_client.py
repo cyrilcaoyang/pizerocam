@@ -21,7 +21,7 @@ buffer_size = data['BufferSize']
 chunk_size = data['ChunkSize']
 
 
-class ImageClient:
+class PhotoClient:
     """
     This is a client that requests and receives images
     More to be added
@@ -154,7 +154,7 @@ class ImageClient:
 
 
 if __name__ == "__main__":
-    client = ImageClient()
+    client = PhotoClient()
     
     # Please confirm that you have the right server IP address
     client.update_server_ip()

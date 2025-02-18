@@ -13,7 +13,7 @@ from sdl_utils import send_file_size, receive_file_size, receive_file
 script_dir = Path(__file__).resolve().parent
 
 # Open and read the JSON file
-with open(script_dir / 'client_settings.yaml', 'r') as file:
+with open(script_dir / 'image_client_settings.yaml', 'r') as file:
     data = yaml.safe_load(file)
 server_ip = data['Server_IP']
 server_port = data['ServerPort']

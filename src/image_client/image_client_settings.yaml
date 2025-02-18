@@ -3,3 +3,4 @@ Server_IP: "172.31.35.47"       # This IP address is only accessible via local W
 ServerPort : 2222
 BufferSize : 2048
 ChunkSize : 1024
+Path_Tesseract: ''        # Please define the path to the tesseract on your PC

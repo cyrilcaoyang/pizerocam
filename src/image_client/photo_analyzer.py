@@ -2,8 +2,7 @@ import os
 import cv2
 import numpy as np
 import pytesseract
-import PIL
-from typing import List, Dict, Tuple, Any
+from typing import Dict, Tuple
 from sdl_utils import get_logger
 
 # Processing parameters

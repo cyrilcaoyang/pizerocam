@@ -5,8 +5,8 @@ from image_client import PhotoAnalyzer
 if __name__ == "__main__":
 
     analyzer = PhotoAnalyzer()
-    # image_path = ('photos/2025-02-11_20-51-04.jpg')
-    image_path = ('photos/interval_64/capture_20250217-164227_127255127.jpg')
+    image_path = ('photos/2025-02-11_20-51-04.jpg')
+    # image_path = ('photos/interval_64/capture_20250217-164227_127255127.jpg')
 
     image = analyzer.load_image(image_path)
 

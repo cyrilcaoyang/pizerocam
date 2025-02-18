@@ -49,7 +49,39 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
      ```
      python server.py
      ```
+  10. (Optional) Make the server run on boot:
+      
+      a. sudo nano /etc/systemd/system/picam.service
 
+      b. add the following script:
+      ```
+      [Unit]
+      Description=Run Python Script with picam_env Virtual Environment
+      After=network.target
+      
+      [Service]
+      User=YOUR_USERNAME
+      WorkingDirectory=PATH_TO_YOUR_PROJECT    # Path to your project folder
+      ExecStart=PATH_TO_PYTHON_INTERPRETER PATH_TO_YOUR_PRPKECT/server.py
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+      ```
+
+      c. Start service
+      ```
+      sudo systemctl daemon-reload  # Reload systemd to recognize the new service
+      sudo systemctl enable picam.service  # Enable on boot
+      sudo systemctl start picam.service   # Start immediately
+      ```
+
+      d. Check if the service is running
+      ```
+      systemctl status picam.service
+      ```
+      
+      
 ## Installing of the Client on the PC that runs the workflows (Client)
 
   1. It is recommended to use the Conda environment (to be added)

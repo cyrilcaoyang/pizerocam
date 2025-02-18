@@ -3,4 +3,4 @@ numpy==2.2.2
 pillow==11.1.0
 pyyaml>=6.0
 pytesseract==0.3.13
-sdl_utils==0.1.0
+sdl_utils==0.1.0        # SDL2 lab utilities

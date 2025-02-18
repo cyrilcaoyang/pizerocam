@@ -21,35 +21,51 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
      PiSugar will establish a web server through which you can check your battery status.
      Use the link at the end of the installation.
 
-  3. Clone this repo; 
+  2. Clone this repo; 
      ```
      git clone https://github.com/cyrilcaoyang/pizerocam/
      ```
      DO NOT enter the project folder yet
      
-  5. Create a Python environment outside of the project folder
+  3. Create a Python environment (it will be outside of the project folder)
      ```
      python -m venv picam_env --system-site-packages
      ```
      Make sure to use the flag at the end, otherwise, picamera2 package cannot be recognized.
      
-  7. Activate the venv
+  4. Activate the venv
      ```
      source picam_env/bin/activate
+
      ```
-    
-  8. Install the LED driver code
+  5. (Optional) Activate the environment every login session(SSH):
+      
+      ```
+      nano ~/.profile
+      ```
+      
+      Add the following line:
+      ```
+      source PATH_TO_ENVIRONMENT/bin/activate
+      ```
+
+      Apply changes:
+      ```
+      source ~/.profile
+      ```
+      
+  6. Install the LED driver code
      ```
      pip3 install adafruit-circuitpython-neopixel
      ```
     
-  9. DO NOT pip install this package
-
-     Just navigate to the server.py code and start the server
+  7. Just navigate to the server.py code and start the server
      ```
      python server.py
      ```
 
+
+      
 ## Installing of the Client on the PC that runs the workflows (Client)
 
   1. It is recommended to use the Conda environment (to be added)

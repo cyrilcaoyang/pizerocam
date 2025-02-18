@@ -76,7 +76,7 @@ class ImageClient:
         received_data = receive_file(sock, file_size, chunk_size, self.logger)
         with open(img_path, "wb") as f:
             f.write(received_data)
-        self.logger.info(f"File f{img_name} saved to: {output_dir}")
+        self.logger.info(f"File {img_name} saved to: {output_dir}")
         return True, img_path
 
     def interactive_client_session(self):

@@ -1,15 +1,18 @@
 import os
 import cv2
+import json
 import numpy as np
 import pytesseract
 from typing import Dict, Tuple
 from sdl_utils import get_logger
+import matplotlib.pyplot as plt
 
 # Processing parameters
 # Cropping parameters. Image will be cropped first
-startY, endY, startX, endX = 800, 2000, 1000, 4200
-width = (endX - startX) // 4
-height = (endY - startY) // 4
+startY, endY, startX, endX = 900, 2100, 900, 4100
+downsize_factor = 1
+width = (endX - startX) // downsize_factor
+height = (endY - startY) // downsize_factor
 
 # For Windows computers, do the following
 # Please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
@@ -76,6 +79,17 @@ class PhotoAnalyzer:
         adjusted = cv2.convertScaleAbs(crop_img, alpha=alpha, beta=beta)
         return adjusted
 
+    def sharpen_image(
+            self,
+            image,
+            strength=1.5,
+            radius=1.0
+    ):
+        """Unsharp mask sharpening"""
+        blurred = cv2.GaussianBlur(image, (0, 0), radius)
+        sharpened = cv2.addWeighted(image, 1.0 + strength, blurred, -strength, 0)
+        return np.clip(sharpened, 0, 255).astype(np.uint8)
+
     def text_detection(
             self,
             file: np.ndarray
@@ -127,7 +141,6 @@ class PhotoAnalyzer:
 
         average_w = W//n
         average_h = H//n
-        self.logger.info(f"OCR parameters {average_w=}, {average_h=}")
 
         for num in num_locations:
             roi_x1 = num_locations[num]['coordinates'][0]
@@ -200,6 +213,7 @@ class PhotoAnalyzer:
     ):
         # Crop and enhance the image before detection
         crop = self.crop_image(image)
+        # crop = self.sharpen_image(crop, strength=1, radius=1) # Optional
         enhance = self.enhance_image(crop, contrast, brightness)
         grey, num_local = self.text_detection(enhance)
 
@@ -230,5 +244,109 @@ class PhotoAnalyzer:
 
 
 if __name__ == "__main__":
-    analyser = PhotoAnalyzer()
+    analyzer = PhotoAnalyzer()
 
+    image_paths = [
+        # ('photos/capture_20250218-130927_255255255.jpg'),
+        ('photos/capture_20250218-130811_100100255.jpg'),
+        # ('photos/capture_20250218-130945_255000000.jpg'),
+        ('photos/capture_20250218-130830_255100100.jpg'),
+        ('photos/capture_20250218-130910_100255100.jpg'),
+        # ('photos/capture_20250218-130910_100255100-2.jpg')
+        # ('photos/capture_20250218-130811_100100255-2.jpg')
+    ]
+
+    resolutions = [2]    #[25, 10, 5, 2]  # Resolution
+    for res in resolutions:
+
+        for image_path in image_paths:
+
+            image = analyzer.load_image(image_path)
+            directory, file_name = os.path.split(image_path)
+            file_name_no_extension = file_name[:-4]
+
+            # Initialize results matrix
+            brightness_steps = range(0, 201, res)
+            contrast_steps = [i / 100 for i in range(100, 301, res)]  # 2.00-3.00 in 0.05 steps
+            results = np.zeros((len(brightness_steps), len(contrast_steps)))
+
+            opt_contrast = 0
+            opt_brightness = 0
+            max_num = 0
+
+            # another map
+            crop = analyzer.crop_image(image)
+            detection_matrix = np.zeros(crop.shape[:2], dtype=np.uint16)
+
+            for j_idx, j in enumerate(brightness_steps):
+                for i_idx, i in enumerate(contrast_steps):
+                    # Get current contrast value
+                    contrast = i
+
+                    # Process image
+                    _, num_loc = analyzer.label_photo(image, contrast=contrast, brightness=j)
+                    current_count = len(num_loc) if num_loc else 0
+                    analyzer.logger.info(f"Trying contrast={i}, brightness={j} found {current_count} numbers.")
+
+                    # Store results in matrix
+                    results[j_idx, i_idx] = current_count
+
+                    # Track optimal parameters (optional)
+                    if current_count >= max_num:
+                        max_num = current_count
+                        opt_contrast = contrast
+                        opt_brightness = j
+
+                    if num_loc:
+                        for num in num_loc.values():
+                            x, y, w, h = num['coordinates']
+                            detection_matrix[y:y + h, x:x + w] += 1
+
+            # Save the heatmap canvas
+            if np.max(detection_matrix) > 0:
+                # Normalize to 0-255 with higher counts = darker
+                normalized = 255 - (detection_matrix / np.max(detection_matrix) * 255).astype(np.uint8)
+            else:
+                normalized = np.full_like(detection_matrix, 255, dtype=np.uint8)
+
+            # Convert to 3-channel "white" background
+            detection_viz = cv2.cvtColor(normalized, cv2.COLOR_GRAY2BGR)
+            analyzer.save_image(detection_viz, f'{file_name_no_extension}_detections_{res=}.png', directory)
+
+            # Generate heatmap
+            plt.figure(figsize=(8, 8))
+            plt.imshow(results,
+                       aspect='auto',
+                       extent=[1.0, 3.0, 0, 200],  # [contrast_min, contrast_max, brightness_min, brightness_max]
+                       origin='lower')
+            plt.colorbar(label='Numbers Recognized')
+            plt.xlabel('Contrast')
+            plt.ylabel('Brightness')
+            plt.title('Number Recognition Performance Heatmap')
+
+            # Save the raw data
+            np.save(f'photos/{file_name_no_extension}_matrix-{res=}.npy', results)
+            # Save the meta data
+            with open(f'photos/{file_name_no_extension}_meta-{res=}.json', 'w') as f:
+                json.dump({
+                    'contrast_range': [min(contrast_steps), max(contrast_steps)],
+                    'brightness_range': [min(brightness_steps), max(brightness_steps)]
+                }, f)
+
+            # Plot the data
+            plt.xticks(np.arange(1.0, 3.0, 0.1))        # Add grid lines
+            plt.yticks(np.arange(0, 201, 10))
+            # plt.show()        # Show the plot
+            # Save the plot as png
+            plt.savefig(f'photos/{file_name_no_extension}_heatmap-{res=}.png', dpi=300, bbox_inches='tight')
+
+            # Final report
+            analyzer.logger.info(f"Found {current_count} numbers")
+            analyzer.logger.info(f"***\nThe optimal contrast for OCR is {opt_contrast}\n")
+            analyzer.logger.info(f"The optimal brightness for OCR is {opt_brightness}\n")
+            analyzer.logger.info(f"Up to {max_num} numbers recognized!\n***")
+
+            marked_crop, num_loc = analyzer.label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
+            analyzer.logger.info(f"Found {len(num_loc) if num_loc else 0} numbers")
+            analyzer.read_ph(marked_crop, (60, 110), 30, num_loc)
+            analyzer.save_image(marked_crop, file_name_no_extension + f'_crop_{res=}.jpg', directory)

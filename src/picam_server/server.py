@@ -114,7 +114,7 @@ class CameraServer:
 
                 # Camera and LED operations
                 self.led.fill(self.color)
-                sleep(5)           # Wait for auto-exposure to settle
+                sleep(3)           # Wait for auto-exposure to settle
                 self.cam.capture_file(img_path)
                 self.led.fill((0, 0, 0))
                 self.logger.info(f"Captured {filename}")

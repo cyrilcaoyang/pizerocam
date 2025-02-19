@@ -28,6 +28,7 @@ if __name__ == "__main__":
                 max_num = len(num_loc)
                 opt_contrast = i / 100
                 opt_brightness = j
+                analyzer.logger.info(f"New best! digits are {num_loc}")
             else:
                 continue
 

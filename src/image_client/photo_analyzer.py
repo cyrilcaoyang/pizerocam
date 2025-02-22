@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 # Processing parameters
 # Cropping parameters. Image will be cropped first
-startY, endY, startX, endX = 600, 1700, 1000, 4200       # TODO: add soft cropping with edge detection
+startY, endY, startX, endX = 1000, 2100, 1000, 4200       # TODO: add soft cropping with edge detection
 downsize_factor = 2         # Arbtuaru factor might have a strong impact on the outcome of OCR
 width = (endX - startX) // downsize_factor
 height = (endY - startY) // downsize_factor
@@ -97,11 +97,16 @@ class PhotoAnalyzer:
     ):
         # Convert cropped image to grayscale for text detection
         grey = cv2.cvtColor(file, cv2.COLOR_BGR2GRAY)
+        # Denoise using Gaussian blur
+        denoised = cv2.GaussianBlur(grey, (5, 5), 0)
+        # Apply Otsu's thresholding
+        binary = cv2.adaptiveThreshold(denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
 
         # Detect text regions using pytesseract
         custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789'
         detection_data = pytesseract.image_to_data(
-            grey,
+            binary,
             config=custom_config,
             output_type=pytesseract.Output.DICT
         )
@@ -120,7 +125,7 @@ class PhotoAnalyzer:
                 number_locations[num] = {
                     'coordinates': (int(x), int(y), int(w), int(h))
                 }
-        return grey, number_locations
+        return binary, number_locations
 
     def text_detection_easyocr(
             self,
@@ -223,13 +228,13 @@ class PhotoAnalyzer:
         crop = self.crop_image(image)
         # crop = self.sharpen_image(crop, strength=1, radius=1) # Optional
         enhance = self.enhance_image(crop, contrast, brightness)
-        grey, num_local = self.text_detection_tesseract(enhance)
+        binary, num_local = self.text_detection_tesseract(enhance)
 
         if len(num_local) !=0: # Can be sped up
             marked_crop, num_local = self.capture_colors(crop, num_local)
         else:
             marked_crop = crop
-        return marked_crop, num_local
+        return marked_crop, binary, num_local
 
 
     def diff_image(
@@ -255,7 +260,7 @@ if __name__ == "__main__":
     analyzer = PhotoAnalyzer()
 
     image_paths = [
-        ("photos/capture_20250221-203313_012012010.jpg")
+        ("photos/dowbsize_factor_4/capture_20250218-130910_100255100.jpg")
     ]
 
     resolutions = [10]    #[25, 10, 5, 2]  # Resolution
@@ -286,7 +291,7 @@ if __name__ == "__main__":
                     contrast = i
 
                     # Process image
-                    _, num_loc = analyzer.label_photo(image, contrast=contrast, brightness=j)
+                    _, _, num_loc = analyzer.label_photo(image, contrast=contrast, brightness=j)
                     current_count = len(num_loc) if num_loc else 0
                     analyzer.logger.info(f"Trying contrast={i}, brightness={j} found {current_count} numbers.")
 
@@ -348,7 +353,8 @@ if __name__ == "__main__":
             analyzer.logger.info(f"The optimal brightness for OCR is {opt_brightness}\n")
             analyzer.logger.info(f"Up to {max_num} numbers recognized!\n***")
 
-            marked_crop, num_loc = analyzer.label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
+            marked_crop, binary, num_loc = analyzer.label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
             analyzer.logger.info(f"Found {len(num_loc) if num_loc else 0} numbers")
             analyzer.read_ph(marked_crop, (200, 200), 50, num_loc)
-            analyzer.save_image(marked_crop, file_name_no_extension + f'_crop_{res=}.jpg', directory)
+            analyzer.save_image(marked_crop, file_name_no_extension + f'_crop_marked{res=}.jpg', directory)
+            analyzer.save_image(binary, file_name_no_extension + f'_crop_binary{res=}.jpg', directory)

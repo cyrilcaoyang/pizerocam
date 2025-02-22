@@ -1,6 +1,7 @@
 import os
 import cv2
 import json
+import easyocr
 import numpy as np
 import pytesseract
 from typing import Dict, Tuple
@@ -9,8 +10,8 @@ import matplotlib.pyplot as plt
 
 # Processing parameters
 # Cropping parameters. Image will be cropped first
-startY, endY, startX, endX = 900, 2100, 900, 4100
-downsize_factor = 1
+startY, endY, startX, endX = 600, 1700, 1000, 4200       # TODO: add soft cropping with edge detection
+downsize_factor = 2         # Arbtuaru factor might have a strong impact on the outcome of OCR
 width = (endX - startX) // downsize_factor
 height = (endY - startY) // downsize_factor
 
@@ -90,7 +91,7 @@ class PhotoAnalyzer:
         sharpened = cv2.addWeighted(image, 1.0 + strength, blurred, -strength, 0)
         return np.clip(sharpened, 0, 255).astype(np.uint8)
 
-    def text_detection(
+    def text_detection_tesseract(
             self,
             file: np.ndarray
     ):
@@ -120,6 +121,13 @@ class PhotoAnalyzer:
                     'coordinates': (int(x), int(y), int(w), int(h))
                 }
         return grey, number_locations
+
+    def text_detection_easyocr(
+            self,
+            file: np.ndarray
+    ):
+
+        pass
 
     def capture_colors(
             self,
@@ -215,9 +223,9 @@ class PhotoAnalyzer:
         crop = self.crop_image(image)
         # crop = self.sharpen_image(crop, strength=1, radius=1) # Optional
         enhance = self.enhance_image(crop, contrast, brightness)
-        grey, num_local = self.text_detection(enhance)
+        grey, num_local = self.text_detection_tesseract(enhance)
 
-        if len(num_local) !=0:
+        if len(num_local) !=0: # Can be sped up
             marked_crop, num_local = self.capture_colors(crop, num_local)
         else:
             marked_crop = crop
@@ -247,16 +255,10 @@ if __name__ == "__main__":
     analyzer = PhotoAnalyzer()
 
     image_paths = [
-        # ('photos/capture_20250218-130927_255255255.jpg'),
-        ('photos/capture_20250218-130811_100100255.jpg'),
-        # ('photos/capture_20250218-130945_255000000.jpg'),
-        ('photos/capture_20250218-130830_255100100.jpg'),
-        ('photos/capture_20250218-130910_100255100.jpg'),
-        # ('photos/capture_20250218-130910_100255100-2.jpg')
-        # ('photos/capture_20250218-130811_100100255-2.jpg')
+        ("photos/capture_20250221-203313_012012010.jpg")
     ]
 
-    resolutions = [2]    #[25, 10, 5, 2]  # Resolution
+    resolutions = [10]    #[25, 10, 5, 2]  # Resolution
     for res in resolutions:
 
         for image_path in image_paths:
@@ -348,5 +350,5 @@ if __name__ == "__main__":
 
             marked_crop, num_loc = analyzer.label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
             analyzer.logger.info(f"Found {len(num_loc) if num_loc else 0} numbers")
-            analyzer.read_ph(marked_crop, (60, 110), 30, num_loc)
+            analyzer.read_ph(marked_crop, (200, 200), 50, num_loc)
             analyzer.save_image(marked_crop, file_name_no_extension + f'_crop_{res=}.jpg', directory)

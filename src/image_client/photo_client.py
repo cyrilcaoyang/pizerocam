@@ -91,7 +91,7 @@ class PhotoClient:
                 if option == "1":
                     try:
                         s.sendall("TAKE_PHOTO".encode('utf-8'))
-                        sleep(10)
+                        sleep(5)
 
                         success, image_path = self.receive_photo(s)
                         if success:

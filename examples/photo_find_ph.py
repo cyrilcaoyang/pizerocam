@@ -40,5 +40,5 @@ if __name__ == "__main__":
 
     analyzer.logger.info(f"Found {len(num_loc) if num_loc else 0} numbers")
 
-    analyzer.read_ph(marked_crop, (110, 110), 30, num_loc)
+    analyzer.read_ph((110, 110), 30, marked_crop, num_loc)
     analyzer.save_image(marked_crop, 'crop_' + file_name, directory)

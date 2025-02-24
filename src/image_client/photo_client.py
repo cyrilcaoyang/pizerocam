@@ -4,7 +4,6 @@ import yaml
 from datetime import datetime
 from pathlib import Path
 from time import sleep
-from PIL import Image
 from sdl_utils import get_logger
 from sdl_utils import connect_socket, send_file_name, receive_file_name
 from sdl_utils import send_file_size, receive_file_size, receive_file
@@ -13,12 +12,14 @@ from sdl_utils import send_file_size, receive_file_size, receive_file
 script_dir = Path(__file__).resolve().parent
 
 # Open and read the JSON file
-with open(script_dir / 'image_client_settings.yaml', 'r') as file:
+with open(script_dir / 'photo_client_settings.yaml', 'r') as file:
     data = yaml.safe_load(file)
 server_ip = data['Server_IP']
 server_port = data['ServerPort']
 buffer_size = data['BufferSize']
 chunk_size = data['ChunkSize']
+path_tesseract = data['Path_Tesseract']
+path_photos = data['Path_Photo']
 
 
 class PhotoClient:
@@ -35,10 +36,13 @@ class PhotoClient:
     @staticmethod
     def setup_logger():
         # Create the logger and file handler
-        logger = get_logger("ImageClientLogger")
+        logger = get_logger("PhotoClientLogger")
         return logger
 
     def update_server_ip(self):
+        """
+        Run this only the first time you set up the server, or when its IP address changes.
+        """
         ip_up_to_date = input(f"Is the server IP address: {self.server_ip}? [Y]: ")
         while True:
             if ip_up_to_date in ['', 'y', 'Y', 'yes', 'Yes']:
@@ -138,7 +142,6 @@ class PhotoClient:
                                 print("Successfully changed LED color!")
                             else:
                                 print(f"Error changing color: {result}")
-
                         else:
                             print(f"Unexpected server response: {response}")
 

@@ -3,7 +3,7 @@ Photo analyzer that give pH readings.
 
 Author: Yang Cao, Acceleration Consortium
 Email: yangcyril.cao@utoronto.ca
-Version: 0.1
+Version: 0.2
 
 For Windows computers, please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
 
@@ -40,6 +40,13 @@ class PhotoAnalyzer:
             data = yaml.safe_load(file)
         self.path_tesseract = data['Path_Tesseract']
         pytesseract.pytesseract.tesseract_cmd = self.path_tesseract
+
+        # Load whitelist and tolerance of OCR
+        self.number_whitelist = set(map(str, data['PH_Whitelist']))
+        self.expected_rows = data.get('Expected_Rows', 2)
+        self.max_y_variance = data.get('Max_Y_Var', 15)
+        self.max_x_variance = data.get('Max_X_Var', 30)
+        self.min_row_density = data.get('Min_Row_Density', 0.7)
 
     @staticmethod
     def _setup_logger():
@@ -100,8 +107,6 @@ class PhotoAnalyzer:
             image,
             contrast,
             brightness,
-            block_size=11,                  # odd numbers, small text <15
-            c=2                             # Fine-tuning parameter -5 to 5
     ):
         # Crop and enhance the image before detection
         crop = self.crop_image(image)
@@ -112,13 +117,7 @@ class PhotoAnalyzer:
 
         # Denoise using Gaussian blur
         denoised = cv2.GaussianBlur(enhanced, (5, 5), 0)
-
-        # This can be optimized, too
-        binary, num_local = self.text_detection_tesseract(
-            denoised,
-            block_size=block_size,
-            c=c
-        )
+        binary, num_local = self.text_detection_tesseract(denoised)
 
         if len(num_local) > 1:
             marked_crop, num_local = self.capture_colors(crop, num_local)
@@ -126,14 +125,13 @@ class PhotoAnalyzer:
             marked_crop = crop
         return marked_crop, binary, num_local
 
-    def text_detection_tesseract(
-            self,
-            file: np.ndarray,
-            block_size,  # Must be odd number
-            c,
-    ):
+    def simple_filter(self, num_loc):
+        """Filter detections using only the whitelist"""
+        return {k: v for k, v in num_loc.items() if k in self.number_whitelist}
+
+    def text_detection_tesseract(self, file: np.ndarray):
         # Detect text regions using pytesseract
-        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789'
+        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789.'
         detection_data = pytesseract.image_to_data(
             file,
             config=custom_config,
@@ -143,30 +141,46 @@ class PhotoAnalyzer:
         # Initialize a dictionary to store the locations of the numbers
         number_locations = {}
         for i in range(len(detection_data['text'])):
-            num = detection_data['text'][i]
-            x = detection_data['left'][i]
-            y = detection_data['top'][i]
-            w = detection_data['width'][i]
-            h = detection_data['height'][i]
+            num = detection_data['text'][i].strip()
 
-            if num.isdigit() and (1 <= int(num) <= 14):
-                # self.logger.info(f"Number {num} found in the image, at position:({x},{y})")
-                number_locations[num] = {
-                    'coordinates': (int(x), int(y), int(w), int(h))
+            # Skip empty or non-numeric text
+            if not num.replace('.', '', 1).isdigit():
+                continue
+
+            # Normalize decimal formatting
+            if '.' in num:
+                parts = num.split('.')
+                if len(parts) != 2:  return None  # Handle multiple decimals
+                if parts[1] == '0':  # Handle whole numbers
+                    normalized = parts[0]
+                else:
+                    decimal_part = parts[1].rstrip('0')  # Handle decimal numbers
+                    normalized = f"{parts[0]}.{decimal_part}" if decimal_part else parts[0]
+                if normalized.startswith('.'):  # Add leading zero if needed
+                    normalized = '0' + normalized
+            else:
+                normalized = num
+
+            # Store only if in whitelist
+            if normalized in self.number_whitelist:
+                number_locations[normalized] = {
+                    'coordinates': (
+                        detection_data['left'][i],
+                        detection_data['top'][i],
+                        detection_data['width'][i],
+                        detection_data['height'][i]
+                    )
                 }
         return file, number_locations
-
-    def text_detection_easyocr(
-            self,
-            file: np.ndarray
-    ): #TODO
-        pass
 
     def capture_colors(
             self,
             file: np.ndarray,
             num_locations
     ):
+        """
+        Read the color of a square shape underneath the numbers
+        """
         (w, h) = (0, 0)
         n = len(num_locations)                              # Get the average size of the numbers
 
@@ -181,8 +195,8 @@ class PhotoAnalyzer:
         for num in num_locations:
             roi_x1 = num_locations[num]['coordinates'][0]
             roi_y1 = num_locations[num]['coordinates'][1] + 2 * average_h
-            roi_x2 = num_locations[num]['coordinates'][0] + average_w
-            roi_y2 = num_locations[num]['coordinates'][1] + 4 * average_h
+            roi_x2 = roi_x1 + average_w
+            roi_y2 = roi_y1 + 2 * average_h
 
             # Extract ROI and calculate the average color of the ROI
             roi = file[roi_y1:roi_y2, roi_x1:roi_x2]
@@ -195,21 +209,35 @@ class PhotoAnalyzer:
         return file, num_locations
 
     def aggregate_viz_positions(self, crop_image):
-        """Process position records to find most likely locations"""
-        aggregated = {}
-        for num in self.position_records:
-            coord_list = np.array(self.position_records[num])
-            count = len(coord_list)
+        """
+        Process position records with advanced filtering for digits and decimals
+        Featuring a two-phase aggregation with robust filtering
+        """
+        # Phase 1: Identify valid anchor points
+        anchor_positions = self._identify_anchor_positions()
 
-            # Use median for position stabilization
-            median_coord = np.median(coord_list, axis=0).astype(int)
+        # Phase 2: Filter and aggregate with clean median
+        aggregated = {}
+        for num in self.position_records.copy():
+            valid_coords = self._filter_coordinates(
+                np.array(self.position_records[num]),
+                num,
+                anchor_positions
+            )
+            count = len(valid_coords)
+            if count == 0:
+                del self.position_records[num]
+                continue
+
+            # Calculate robust median using IQR
+            median_coord = self._robust_median(valid_coords)
             x, y, w, h = median_coord
 
             # Get color from original crop using stabilized position
-            roi_y1 = y + 2 * h
-            roi_y2 = y + 4 * h
-            roi_x1 = x
-            roi_x2 = x + w
+            roi_y1 = median_coord[1] + 2 * median_coord[3]
+            roi_y2 = median_coord[1] + 4 * median_coord[3]
+            roi_x1 = median_coord[0]
+            roi_x2 = median_coord[0] + median_coord[2]
 
             # Ensure ROI stays within image bounds
             roi = crop_image[
@@ -256,23 +284,135 @@ class PhotoAnalyzer:
                 0.7, (0, 255, 0), 2)
         return aggregated, marked_crop
 
+    def _identify_anchor_positions(self):
+        """Find reliable positions of multi-part numbers"""
+        anchors = defaultdict(list)
+        for num in self.position_records:
+            if len(num) > 1 or '.' in num:
+                coords = np.array(self.position_records[num])
+                if len(coords) > 0:
+                    anchors[num] = self._robust_median(coords)
+        return anchors
+
+    def _filter_coordinates(self, coords, current_num, anchors):
+        """Remove coordinates conflicting with verified anchors"""
+        if len(coords) == 0:
+            return []
+
+        # Check against all relevant anchors
+        invalid_mask = np.zeros(len(coords), dtype=bool)
+
+        # Get potential parent numbers from whitelist
+        parent_numbers = self._get_parent_numbers(current_num)
+
+        for parent_num in parent_numbers:
+            if parent_num in anchors:
+                anchor_pos = anchors[parent_num]
+                # Vectorized distance calculation
+                distances = np.sqrt(
+                    (coords[:, 0] - anchor_pos[0]) ** 2 +
+                    (coords[:, 1] - anchor_pos[1]) ** 2
+                )
+                invalid_mask |= distances < self._dynamic_threshold(parent_num)
+
+        return coords[~invalid_mask]
+
+    def _robust_median(self, coords):
+        """Outlier-resistant median calculation using IQR"""
+        if len(coords) < 3:
+            return np.median(coords, axis=0).astype(int)
+
+        q1 = np.percentile(coords, 25, axis=0)
+        q3 = np.percentile(coords, 75, axis=0)
+        iqr = q3 - q1
+
+        inlier_mask = (
+                (coords >= q1 - 1.5 * iqr) &
+                (coords <= q3 + 1.5 * iqr)
+        ).all(axis=1)
+
+        return np.median(coords[inlier_mask], axis=0).astype(int)
+
+    def _get_parent_numbers(self, num):
+        """Get possible parent numbers from whitelist"""
+        return [n for n in self.number_whitelist
+                if num in n.replace('.', '') and n != num]
+
+    def _dynamic_threshold(self, parent_num):
+        """Adaptive threshold based on number format"""
+        if '.' in parent_num:
+            return self.max_x_variance * 1.5
+        return self.max_x_variance * len(parent_num)
+
     def diff_image(
             self,
             img_path_dry: str,
             img_path_wet: str
-    ):
-        directory, file_name = os.path.split(img_path_wet)
-        img_dry = cv2.imread(img_path_dry)
-        img_wet = cv2.imread(img_path_wet)
-        if img_dry.shape == img_wet.shape:
-            diff = cv2.absdiff(img_dry, img_wet)
-            grey_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-            enhance_diff = self.enhance_image(grey_diff, 2.0, 0)
+    ) -> tuple:
+        """
+        TODO: complete documentation
+        Returns:
+            tuple: (heatmap_path, (center_x, center_y, diameter))
+                   - heatmap_path: path to generated heatmap image
+                   - coordinates: tuple of (x, y, diameter) or None
+        """
+        # Load and validate images
+        img_dry = self.crop_image(cv2.imread(img_path_dry))
+        img_wet = self.crop_image(cv2.imread(img_path_wet))
 
-            # Save the result
-            self.save_image(enhance_diff, 'diff_' + file_name, directory)
-        else:
-            self.logger.info("Images are not the same size.")
+        wet_path = Path(img_path_wet)
+
+        if img_dry is None or img_wet is None:
+            self.logger.error("Failed to load one or both images")
+            return (None, None)
+
+        if img_dry.shape != img_wet.shape:
+            self.logger.error("Image dimensions mismatch")
+            return (None, None)
+
+        # Calculate perceptual color difference
+        lab_dry = cv2.cvtColor(img_dry, cv2.COLOR_BGR2LAB)
+        lab_wet = cv2.cvtColor(img_wet, cv2.COLOR_BGR2LAB)
+
+        delta_e = np.sqrt(
+            np.square(lab_dry[:, :, 1].astype(np.float32) - lab_wet[:, :, 1]) +
+            np.square(lab_dry[:, :, 2].astype(np.float32) - lab_wet[:, :, 2])
+        )
+
+        # Generate heatmap
+        norm_diff = cv2.normalize(delta_e, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+        heatmap = cv2.applyColorMap(norm_diff, cv2.COLORMAP_JET)
+        heatmap_path = wet_path.parent / f"{wet_path.stem}_heatmap.png"
+        cv2.imwrite(str(heatmap_path), heatmap)
+
+        # Analyze change region
+        blurred = cv2.GaussianBlur(delta_e, (51, 51), 0)
+        _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
+
+        if max_val < 5:
+            self.logger.info("No significant changes detected")
+            return (heatmap_path, None)
+
+        # Calculate weighted centroid
+        y_grid, x_grid = np.indices(delta_e.shape)
+        weights = np.maximum(blurred - max_val * 0.5, 0)
+        total_weight = np.sum(weights)
+
+        if total_weight < 1e-6:
+            return (heatmap_path, None)
+
+        center_x = np.sum(x_grid * weights) / total_weight
+        center_y = np.sum(y_grid * weights) / total_weight
+
+        # Calculate effective diameter
+        x_dev = np.sqrt(np.sum(weights * (x_grid - center_x) ** 2) / total_weight)
+        y_dev = np.sqrt(np.sum(weights * (y_grid - center_y) ** 2) / total_weight)
+        diameter = 2.3548 * np.sqrt(x_dev ** 2 + y_dev ** 2)  # FWHM conversion
+
+        return (
+            heatmap_path,
+            (int(center_x), int(center_y), int(diameter))
+        )
 
     def analysis_with_opt(
             self,
@@ -285,6 +425,9 @@ class PhotoAnalyzer:
             crop:
             marked_crop:
         """
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"Image not found: {image_path}")
+
         image = analyzer.load_image(image_path)
         directory, file_name = os.path.split(image_path)
         file_name_no_extension = file_name[:-4]
@@ -312,8 +455,6 @@ class PhotoAnalyzer:
                         self.position_records[num].append((x, y, w, h))  # Add found positions to aggregated records
                 if current_count >= max_num:  # Track optimal parameters (optional)
                     max_num = current_count
-                    opt_contrast = contrast
-                    opt_brightness = j
 
         if np.max(detection_matrix) > 0:  # Save the heatmap canvas
             # Normalize to 0-255 with higher counts = darker
@@ -330,23 +471,15 @@ class PhotoAnalyzer:
         plt.xlabel('Contrast')
         plt.ylabel('Brightness')
         plt.title('Number Recognition Performance Heatmap')
+
         # Plot the data
         plt.xticks(np.arange(1.0, 3.0, 0.1))  # Add grid lines
         plt.yticks(np.arange(0, 200, 10))
         plt.savefig(f'photos/{file_name_no_extension}_heatmap-{step=}.png', dpi=300, bbox_inches='tight')
-        # Save the raw data
-        np.save(f'photos/{file_name_no_extension}_matrix-{step=}.npy', opt_results)
-        # Save the metadata
-        with open(f'photos/{file_name_no_extension}_meta-{step=}.json', 'w') as f:
-            json.dump({
-                'contrast_range': [min(contrast_steps), max(contrast_steps)],
-                'brightness_range': [min(brightness_steps), max(brightness_steps)]
-            }, f)
 
-            # Aggregate positions after all iterations
+        # Aggregate positions after all iterations
         aggregated_numbers, marked_crop = self.aggregate_viz_positions(crop)
         self.save_image(marked_crop, f'{file_name_no_extension}_aggregated_{step=}.png', directory)
-
         return aggregated_numbers, marked_crop
 
     def read_ph(
@@ -396,10 +529,10 @@ class PhotoAnalyzer:
                 self.logger.info(f"***\nThe closest pH value is {closest_ph}.\n***")
 
                 crop_ph = crop.copy()
-                cv2.rectangle(crop_ph, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                cv2.rectangle(crop_ph, (x1, y1), (x2, y2), (255, 255, 0), 2)
                 cv2.putText(crop_ph, f"pH: {closest_ph}",
                             (read_coord[0], read_coord[1] - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
 
                 # Save and return results
                 self.save_image(crop_ph,f'{file_name_no_extension}_ph_result.png', directory)
@@ -411,41 +544,28 @@ class PhotoAnalyzer:
         return 'Insufficient detections', aggregated_nums, crop
 
 
-        # # Final report
-        # self.logger.info(f"***\nThe optimal contrast for OCR is {opt_contrast}\n")
-        # self.logger.info(f"The optimal brightness for OCR is {opt_brightness}\n")
-        # self.logger.info(f"Up to {max_num} numbers recognized!\n***")
-        #
-        # self.logger.info(f"***\nThe optimal contrast for OCR is {opt_contrast}\n")
-        # self.logger.info(f"The optimal brightness for OCR is {opt_brightness}\n")
-        # self.logger.info(f"Up to {max_num} numbers recognized!\n***")
-        #
-        # marked_crop, binary, num_loc = self.label_photo(image, contrast=opt_contrast, brightness=opt_brightness)
-        # self.logger.info(f"Found {len(num_loc) if num_loc else 0} numbers")
-        # self.save_image(marked_crop, file_name_no_extension + f'_crop_marked{step=}.jpg', directory)
-        # self.save_image(binary, file_name_no_extension + f'_crop_binary{step=}.jpg', directory)
-        #
-        # if max_num == 12:
-        #     _, ph = self.read_ph(marked_crop, (240, 220), 50, num_loc)
-        #     return ph
-        # else:
-        #     return None
-
-
 if __name__ == "__main__":
     analyzer = PhotoAnalyzer()
 
     # Macbook setting override
     pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
 
-    path_to_image = (
-        "photos/2025-02-11_20-53-30.jpg"
-    )
+    path_to_image_dry = ("photos/2025-02-11_20-52-20.jpg")
+    path_to_image_wet = ("photos/2025-02-11_20-53-30.jpg")
 
-    for opt_step in [20]:
-        aggregate_nums, marked_crop = analyzer.analysis_with_opt(path_to_image, step=opt_step)
-        closest_ph, aggregated_nums, crop_ph = analyzer.read_ph(
-            (240, 220), 50,
-            path_to_image, aggregate_nums
-        )
-        analyzer.logger.info(f"The pH = {closest_ph}.")
+    _, ROI = analyzer.diff_image(path_to_image_dry, path_to_image_wet)
+    print(f"ROI_X = {ROI[0]}, ROI_Y = {ROI[1]}, diameter = {ROI[2]}")
+
+    for opt_step in [25]:
+        try:
+            aggregate_nums, labelled_crop = analyzer.analysis_with_opt(path_to_image_wet, step=opt_step)
+            if aggregate_nums:
+                closest_ph, aggregated_nums, crop_ph = analyzer.read_ph(
+                (ROI[0]-ROI[2]//4, ROI[1]-ROI[2]//4), ROI[2]//2,
+                path_to_image_wet, aggregate_nums
+                )
+                analyzer.logger.info(f"The pH = {closest_ph}.")
+            else:
+                analyzer.logger.error("No valid numbers detected")
+        except Exception as e:
+            analyzer.logger.error(f"Analysis failed: {str(e)}")

@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 from sdl_utils import get_logger
 
 # Cropping parameters. Image will be cropped first TODO: add soft cropping with edge detection
-startY, endY, startX, endX = 800, 2000, 1000, 4200
+startY, endY, startX, endX = 800, 1900, 1000, 4000
 downsize_factor = 2         # This factor might have a strong impact on the outcome of OCR
 width = (endX - startX) // downsize_factor
 height = (endY - startY) // downsize_factor
@@ -432,8 +432,8 @@ class PhotoAnalyzer:
         directory, file_name = os.path.split(image_path)
         file_name_no_extension = file_name[:-4]
 
-        brightness_steps = range(0, 201, step)  # Initialize results matrix of OCR
-        contrast_steps = [i / 100 for i in range(100, 301, step)]  # 1.00-3.00 in steps
+        brightness_steps = range(-200, 201, step)  # Initialize results matrix of OCR
+        contrast_steps = [i / 100 for i in range(0, 301, step)]  # 1.00-3.00 in steps
         opt_results = np.zeros((len(brightness_steps), len(contrast_steps)))
         opt_contrast, opt_brightness, max_num = 0, 0, 0
 
@@ -466,15 +466,15 @@ class PhotoAnalyzer:
 
         # Generate heatmap of numbers OCR picks up vs contrast and brightness
         plt.figure(figsize=(8, 8))  # [contrast_min, contrast_max, brightness_min, brightness_max]
-        plt.imshow(opt_results, aspect='auto', extent=(1.0, 3.0, 0, 200), origin='lower')
+        plt.imshow(opt_results, aspect='auto', extent=(0.0, 3.0, -200, 200), origin='lower')
         plt.colorbar(label='Numbers Recognized')
         plt.xlabel('Contrast')
         plt.ylabel('Brightness')
         plt.title('Number Recognition Performance Heatmap')
 
         # Plot the data
-        plt.xticks(np.arange(1.0, 3.0, 0.1))  # Add grid lines
-        plt.yticks(np.arange(0, 200, 10))
+        plt.xticks(np.arange(0.0, 3.0, 0.1))  # Add grid lines
+        plt.yticks(np.arange(-200, 200, 10))
         plt.savefig(f'photos/{file_name_no_extension}_heatmap-{step=}.png', dpi=300, bbox_inches='tight')
 
         # Aggregate positions after all iterations
@@ -548,20 +548,21 @@ if __name__ == "__main__":
     analyzer = PhotoAnalyzer()
 
     # Macbook setting override
-    pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
+    # pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
 
-    path_to_image_dry = ("photos/2025-02-11_20-52-20.jpg")
-    path_to_image_wet = ("photos/2025-02-11_20-53-30.jpg")
+    path_to_image_dry = ("photos/capture_20250225-160453_200200200.jpg")
+    path_to_image_wet = ("photos/capture_20250225-160539_200200200.jpg")
 
     _, ROI = analyzer.diff_image(path_to_image_dry, path_to_image_wet)
     print(f"ROI_X = {ROI[0]}, ROI_Y = {ROI[1]}, diameter = {ROI[2]}")
 
-    for opt_step in [25]:
+    for opt_step in [5]:
         try:
             aggregate_nums, labelled_crop = analyzer.analysis_with_opt(path_to_image_wet, step=opt_step)
             if aggregate_nums:
                 closest_ph, aggregated_nums, crop_ph = analyzer.read_ph(
                 (ROI[0]-ROI[2]//4, ROI[1]-ROI[2]//4), ROI[2]//2,
+                #(75,75),40,
                 path_to_image_wet, aggregate_nums
                 )
                 analyzer.logger.info(f"The pH = {closest_ph}.")

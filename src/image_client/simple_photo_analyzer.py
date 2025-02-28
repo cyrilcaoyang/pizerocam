@@ -37,7 +37,6 @@ class SimplePhotoAnalyzer:
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
         self.logger = logging.getLogger("Simple pH Analyzer")
-        self.color_weights = np.array([0.2, 1.0, 1.0])  # LAB channel weights
         self.reference_output_dir = "reference_annotations"  # New directory for reference images
 
     def get_roi_data(self, image_path):
@@ -166,17 +165,14 @@ if __name__ == "__main__":
     analyzer = SimplePhotoAnalyzer()
 
     known_samples = {
-        1.0: "photos/capture_20250226_200200200_1.jpg",
-        4.0: "photos/capture_20250226_200200200_4.jpg",
-        7.0: "photos/capture_20250226_200200200_7.jpg",
-        10.0: "photos/capture_20250226_200200200_10.jpg",
-        12.5: "photos/capture_20250226_200200200_12.jpg",
+        1.0: "photos/simple_workflow/capture_20250226_200200200_1.jpg",
+        4.0: "photos/simple_workflow/capture_20250226_200200200_4.jpg",
+        7.0: "photos/simple_workflow/capture_20250226_200200200_7.jpg",
+        10.0: "photos/simple_workflow/capture_20250226_200200200_10.jpg",
+        12.5: "photos/simple_workflow/capture_20250226_200200200_12.jpg",
     }
 
-    # unknown_sample = "photos/capture_20250226_200200200_unknown.jpg"
-    # unknown_sample = "photos/capture_20250226_200200200_water.jpg"
-    unknown_sample = "photos/capture_20250226_200200200_1.68.jpg"
-    #  = "photos/capture_20250226_200200200_12.jpg"
+    unknown_sample = "photos/simple_workflow/capture_20250226_200200200_unknown.jpg"
 
     try:
         closest_ph, distances, output_path = analyzer.find_closest_ph(

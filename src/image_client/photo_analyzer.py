@@ -7,8 +7,6 @@ Version: 0.2
 
 For Windows computers, please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
 
-For use of EasyOCR, please first install PyTorch according to: https://pytorch.org/
-# Then install: pip3 install easyocr
 """
 
 import os
@@ -414,9 +412,17 @@ class PhotoAnalyzer:
             (int(center_x), int(center_y), int(diameter))
         )
 
+    def hard_coded_analysis(
+            self,
+            image_path,                     # Path to image to be analyzed
+            *args                           #
+    ):
+
+        pass
+
     def analysis_with_opt(
             self,
-            image_path,  # Path to image
+            image_path,                     # Path to image
             step=25  # Default opt parameter
     ):
         """
@@ -548,21 +554,24 @@ if __name__ == "__main__":
     analyzer = PhotoAnalyzer()
 
     # Macbook setting override
-    # pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
+    pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
 
     path_to_image_dry = ("photos/capture_20250225-160453_200200200.jpg")
     path_to_image_wet = ("photos/capture_20250225-160539_200200200.jpg")
+    # path_to_image_wet = ("photos/capture_20250225-160255_200100100.jpg")
+    # path_to_image_wet = ("photos/capture_20250225-160316_100200100.jpg")
+    # path_to_image_wet = ("photos/capture_20250225-160336_100100200.jpg")
 
     _, ROI = analyzer.diff_image(path_to_image_dry, path_to_image_wet)
     print(f"ROI_X = {ROI[0]}, ROI_Y = {ROI[1]}, diameter = {ROI[2]}")
 
-    for opt_step in [5]:
+    for opt_step in [20, 10, 5]:
         try:
             aggregate_nums, labelled_crop = analyzer.analysis_with_opt(path_to_image_wet, step=opt_step)
             if aggregate_nums:
                 closest_ph, aggregated_nums, crop_ph = analyzer.read_ph(
-                (ROI[0]-ROI[2]//4, ROI[1]-ROI[2]//4), ROI[2]//2,
-                #(75,75),40,
+                # (ROI[0]-ROI[2]//4, ROI[1]-ROI[2]//4), ROI[2]//2,
+                (150,150),80,
                 path_to_image_wet, aggregate_nums
                 )
                 analyzer.logger.info(f"The pH = {closest_ph}.")

@@ -1,5 +1,5 @@
 # This file defines how the client interact with the server
-Server_IP: "172.31.32.46"       # This IP address is only accessible via local Wi-Fi network.
+Server_IP: "172.31.32.55"       # This IP address is only accessible via local Wi-Fi network.
 ServerPort : 2222
 BufferSize : 2048
 ChunkSize : 1024

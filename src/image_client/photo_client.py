@@ -1,8 +1,6 @@
 import os
 import socket
 import yaml
-import subprocess
-import paramiko
 from pathlib import Path
 from time import sleep
 from sdl_utils import get_logger

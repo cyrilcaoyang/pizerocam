@@ -1,6 +1,6 @@
 """
 Photo analyzer that give pH readings.
-1. Local method:
+1. Local method: We use Tesseract for OCR
 2. Cloud method: We use google cloud vision API for OCR
 
 Author: Yang Cao, Acceleration Consortium
@@ -33,61 +33,76 @@ First install google cloud sdk and restart terminal
 """
 
 import os
+import sys
 import cv2
 import yaml
 import re
 import numpy as np
 import pytesseract
+import logging
 from pprint import pprint
 from pathlib import Path
-from typing import Dict, Tuple
 from collections import defaultdict
 import matplotlib.pyplot as plt
-from sdl_utils import get_logger
 from google.cloud import vision
+from typing import Tuple, List, Dict
 
 # Cropping parameters. Image will be cropped first TODO: add soft cropping with edge detection
 startY, endY, startX, endX = 600, 2000, 1000, 4400
-downsize_factor = 2         # This factor might have a strong impact on the outcome of OCR
+downsize_factor = 2         # This factor might have a strong impact on the outcome of Tesseract OCR
 width = (endX - startX) // downsize_factor
 height = (endY - startY) // downsize_factor
 
-
 class PhotoAnalyzer:
-    def __init__(self):
-        self.logger = self._setup_logger()
-        script_dir = Path(__file__).resolve().parent        # Get the directory where this script is located
-        self.position_records = defaultdict(list)           # Track positions across conditions
+    """Base class with customizable logger name"""
+    LOGGER_NAME = "PhotoAnalyzer"                               # Default base name
+
+    def __init__(self, logger=None):
+        self.logger = logger or self._create_class_logger()     # Initialize with existing logger or create default
+
+        script_dir = Path(__file__).resolve().parent            # Get the directory where this script is located
+        self.position_records = defaultdict(list)               # Track positions of numbers in OCR
 
         with open(script_dir / 'image_client_settings.yaml', 'r') as file:
             data = yaml.safe_load(file)
 
-        self.path_tesseract = data['Path_Tesseract']                    # For tesseract OCR use case only
-        pytesseract.pytesseract.tesseract_cmd = self.path_tesseract
         self.expected_rows = data.get('Expected_Rows', 2)
         self.max_y_variance = data.get('Max_Y_Var', 15)
         self.max_x_variance = data.get('Max_X_Var', 30)
         self.min_row_density = data.get('Min_Row_Density', 0.7)
+        self.number_whitelist = set(map(str, data['PH_Whitelist']))
+        self.logger.info("The whitelist is loaded as:")
+        self.logger.info(f"{self.number_whitelist}")
 
-        self.number_whitelist = set(map(str, data['PH_Whitelist']))     # Load whitelist and tolerance of OCR
-        self.logger.info(f"Whitelist loaded as: {self.number_whitelist}")
-
-
-    @staticmethod
-    def _setup_logger():
-        logger = get_logger("PhotoAnalyzerLogger")                      # Create the logger and file handler
+    @classmethod
+    def _create_class_logger(cls):
+        """Create logger using class-specific name"""
+        logger = logging.getLogger(f"{cls.LOGGER_NAME}.{cls.__name__}")
+        cls._configure_logger(logger)
         return logger
 
-    def load_image(self, img_path):
-        """
-        Image Loader
-        :param img_path: path to the image file
-        :returns: image: np.ndarray
-        """
+    @staticmethod
+    def _configure_logger(logger):
+        """Shared logger configuration"""
+        if not logger.handlers:
+            logger.setLevel(logging.INFO)
+            handler = logging.StreamHandler(sys.stdout)         # Also output the stout by streaming the output
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.propagate = False
+
+    def load_image(
+            self,
+            img_path
+    ) -> np.ndarray:
+        """Load the image file as color image"""
         try:
-            color_image = cv2.imread(img_path)
-            self.logger.info(f"Image loaded from {img_path}.\nImage dimensions: {color_image.shape}")
-            return color_image
+            image = cv2.imread(img_path)
+            self.logger.info(f"Image loaded from {img_path}.\nImage dimensions: {image.shape}")
+            return image
         except Exception as e:
             self.logger.error(f"Error: {e}.")
             raise ValueError
@@ -98,16 +113,6 @@ class PhotoAnalyzer:
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         self.logger.info("External window closed.")
-
-    def save_image(
-            self,
-            file: np.ndarray,
-            filename: str,
-            dir: os.path
-    ):
-        file_path = os.path.join(dir, filename)
-        cv2.imwrite(str(file_path), file)
-        self.logger.info(f"Image saved as {file_path}.")
 
     @staticmethod
     def crop_image(file: np.ndarray):
@@ -125,515 +130,694 @@ class PhotoAnalyzer:
         adjusted = cv2.convertScaleAbs(crop_img, alpha=float(contrast), beta=float(brightness))
         return adjusted
 
-    def text_detection_tesseract(
-            self,
-            file: np.ndarray
-    ):
-        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789.'
-        detection_data = pytesseract.image_to_data(
-            file,
-            config=custom_config,
-            output_type=pytesseract.Output.DICT
-        )
-        # Initialize a dictionary to store the locations of the numbers
-        number_locations = {}
-        for i in range(len(detection_data['text'])):
-            num = detection_data['text'][i].strip()
-
-            if not num.replace('.', '', 1).isdigit(): continue          # Skip empty or non-numeric text
-            if '.' in num:                                              # Normalize decimal formatting
-                parts = num.split('.')
-                if len(parts) != 2:  return None                        # Handle multiple decimals
-                if parts[1] == '0':                                     # Handle whole numbers
-                    normalized = parts[0]
-                else:
-                    decimal_part = parts[1].rstrip('0')                 # Handle decimal numbers
-                    normalized = f"{parts[0]}.{decimal_part}" if decimal_part else parts[0]
-                if normalized.startswith('.'):                          # Add leading zero if needed
-                    normalized = '0' + normalized
-            else: normalized = num
-
-            # Store only if in whitelist
-            if normalized in self.number_whitelist:
-                number_locations[normalized] = {
-                    'coordinates': (
-                        detection_data['left'][i],
-                        detection_data['top'][i],
-                        detection_data['width'][i],
-                        detection_data['height'][i]
-                    )
-                }
-        return number_locations
-
-    def text_detection_google_vision(self, image: np.ndarray):
-        # Setting up google cloud API
-        client = vision.ImageAnnotatorClient()
-
-        # Convert image to bytes
-        _, encoded_image = cv2.imencode(".jpg", image)
-        image_bytes = encoded_image.tobytes()
-
-        # Create the Vision API Image object
-        image_obj = vision.Image(content=image_bytes)
-        response = client.document_text_detection(image=image_obj)
-
-        ph_values = []
-        ph_pattern = re.compile(r'^\d+([.,]\d)?$')  # Match "7", "7.5", "7,5"
-        for page in response.full_text_annotation.pages:
-            for block in page.blocks:
-                for paragraph in block.paragraphs:
-                    for word in paragraph.words:
-                        word_text = ''.join([symbol.text for symbol in word.symbols])
-                        if ph_pattern.match(word_text):
-                            normalized = word_text.replace(',', '.')    # Normalize to "X.X" format
-                            if '.' not in normalized:
-                                normalized += ".0"
-                            elif len(normalized.split('.')[1]) > 1:
-                                normalized = normalized.split('.')[0] + '.' + normalized.split('.')[1][0]
-
-                            if normalized in self.number_whitelist:
-                                vertices = [(vertex.x, vertex.y) for vertex in word.bounding_box.vertices]
-                                ph_values.append({
-                                    'ph_value': normalized,
-                                    'bounding_box': vertices
-                                })
-        if response.error.message:
-            raise Exception(f'{response.error.message}')
-        return ph_values
+    def save_image(self, file: np.ndarray, filename: str, directory: os.path):
+        file_path = os.path.join(directory, filename)
+        cv2.imwrite(str(file_path), file)
+        self.logger.info(f"Image saved as {file_path}.")
 
     def capture_colors(
-            self,
-            file: np.ndarray,
-            num_locations
+            self, image:
+            np.ndarray,
+            detections: list
     ):
         """
-        Read the color of a square shape underneath the numbers
-        :para:
-        :returns:
+        Polygon-aware color capture for both OCR implementations
+        Returns image with ROIs marked and updated detections with colors
         """
-        (w, h, n) = (0, 0, len(num_locations))
-        n = len(num_locations)
+        if not detections:
+            self.logger.info('No detections for color capture')
+            return image, []
 
-        if n == 0:
-            self.logger.info('Nothing found!')
-            return file, {}
-        for num in num_locations:
-            w += num_locations[num]['coordinates'][2]
-            h += num_locations[num]['coordinates'][3]
-        average_w, average_h = w//n, h//n                           # Getting average size of the numbers
+        dimensions = []                                         # Calculate average dimensions from polygon vertices
+        for det in detections:
+            x_coords = [p[0] for p in det['bounding_box']]
+            y_coords = [p[1] for p in det['bounding_box']]
+            dimensions.append((
+                max(x_coords) - min(x_coords),
+                max(y_coords) - min(y_coords)
+            ))
+        avg_width = int(np.mean([w for w, h in dimensions]))
+        avg_height = int(np.mean([h for w, h in dimensions]))
 
-        for num in num_locations:
-            roi_x1 = num_locations[num]['coordinates'][0]           # Defining the ROIs
-            roi_y1 = num_locations[num]['coordinates'][1] + 2 * average_h
-            roi_x2 = roi_x1 + average_w
-            roi_y2 = roi_y1 + 2 * average_h
+        marked = image.copy()                                       # Mark numbers recognized
+        for det in detections:
+            x_coords = [p[0] for p in det['bounding_box']]          # Get bounding box extremes
+            y_coords = [p[1] for p in det['bounding_box']]
+            x_min, x_max = min(x_coords), max(x_coords)
+            y_min, y_max = min(y_coords), max(y_coords)
 
-            roi = file[roi_y1:roi_y2, roi_x1:roi_x2]                # Calculate the average color of the ROI
-            avg_color_per_row = np.average(roi, axis=0)
-            avg_color = np.average(avg_color_per_row, axis=0)
-            num_locations[num]['color'] = avg_color
-            cv2.rectangle(file, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 255, 0), 2) # highlight ROI with numbers
-        return file, num_locations
+            roi_y1 = y_max + int(0.5 * avg_height)                  # Calculate color ROI (2x avg height below text)
+            roi_y2 = roi_y1 + int(1.5 * avg_height)
+            roi_x1 = x_min
+            roi_x2 = x_max
 
-    def find_num_loc_colors_tess(
-            self,
-            image,
-            contrast,
-            brightness,
-    ):
-        """
-        Get the locations and colors of numbers using tesseract
-        """
-        crop = self.crop_image(image)                                   # Crop the image
-        grey = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)                   # Convert image to greyscale for OCR
-        enhanced_grey = self.enhance_image(grey, contrast, brightness)
-        denoised_grey = cv2.GaussianBlur(enhanced_grey, (5, 5), 0)   # Denoise using Gaussian blur
-        num_local = self.text_detection_tesseract(denoised_grey)        # OCR w/ tesseract, num_local has no color info
+            roi = image[roi_y1:roi_y2, roi_x1:roi_x2]               # Get color from ROI
+            det['color'] = np.mean(roi, axis=(0, 1)).tolist() if roi.size > 0 else [0, 0, 0]
+            cv2.rectangle(marked, (roi_x1, roi_y1), (roi_x2, roi_y2), (0, 255, 0), 2)           # Draw visualization
+            cv2.polylines(marked, [np.array(det['bounding_box'])], True, (0, 255, 255), 2)
+        return marked, detections
 
-        if len(num_local) > 1:                                          # Update num_local to include color info
-            marked_crop, num_local = self.capture_colors(crop, num_local)
-        else: marked_crop = crop
-        return marked_crop, denoised_grey, num_local
+    @staticmethod
+    def _base_normalization(text: str) -> str:
+        """Universal normalization for all OCR implementations"""
+        clean = re.sub(r'[^\d.,]', '', text)            # Strip non-numeric characters except . and ,
+        normalized = clean.replace(',', '.').lstrip('0')# Handle European decimals and leading zeros
 
-    def find_num_loc_colors_cloud(
-            self,
-            image,
-            contrast,
-            brightness,
-    ):
-        """
-        Get the locations and colors of numbers using Google Cloud Vision API # TODO
-        """
-        crop = self.crop_image(image)                                   # Crop the image
-        grey = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)                   # Convert image to greyscale for OCR
-        enhanced_grey = self.enhance_image(grey, contrast, brightness)
-        denoised_grey = cv2.GaussianBlur(enhanced_grey, (5, 5), 0)   # Denoise using Gaussian blur
-        num_local = self.text_detection_tesseract(denoised_grey)        # OCR w/ tesseract, num_local has no color info
-
-        if len(num_local) > 1:                                          # Update num_local to include color info
-            marked_crop, num_local = self.capture_colors(crop, num_local)
-        else: marked_crop = crop
-        return marked_crop, denoised_grey, num_local
-
-    def aggregate_viz_positions(self, crop_image):
-        """
-        Process position records with advanced filtering for digits and decimals
-        Featuring a two-phase aggregation with robust filtering
-        """
-        anchor_positions = self._identify_anchor_positions()            # Identify valid anchor points
-        aggregated = {}                                                 # Filter and aggregate with clean median
-        for num in self.position_records.copy():
-            valid_coords = self._filter_coordinates(
-                np.array(self.position_records[num]),
-                num,
-                anchor_positions
-            )
-            count = len(valid_coords)
-            if count == 0:
-                del self.position_records[num]
-                continue
-
-            # Calculate robust median using IQR
-            median_coord = self._robust_median(valid_coords)
-            x, y, w, h = median_coord
-            roi_y1 = y + 2 * h
-            roi_y2 = y + 4 * h
-            roi_x1 = x
-            roi_x2 = x + w
-
-            roi = crop_image[
-                  max(0, roi_y1):min(crop_image.shape[0], roi_y2),      # Ensure ROI stays within image bounds
-                  max(0, roi_x1):min(crop_image.shape[1], roi_x2)
-                  ]
-
-            avg_color = (0, 0, 0)
-            if roi.size > 0:
-                avg_color_per_row = np.average(roi, axis=0)
-                avg_color = np.average(avg_color_per_row, axis=0)
-
-            aggregated[num] = {
-                'coordinates': tuple(median_coord),
-                'color': avg_color,
-                'count': count
-            }
-
-        # Create visualization with counts
-        marked_crop = crop_image.copy()
-        for num_str, data in aggregated.items():
-            x, y, w, h = data['coordinates']
-            cv2.rectangle(marked_crop, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw bounding box
-            label_text = f"{num_str} ({data['count']})"                         # Create label text
-
-            (text_width, text_height), _ = cv2.getTextSize(      # Calculate text size for proper positioning
-                label_text, cv2.FONT_HERSHEY_SIMPLEX,
-                0.7, 2
-            )
-
-            # Draw background rectangle for text
-            # cv2.rectangle(marked_crop, (x, y - text_height - 10), (x + text_width, y - 10), (0, 0, 0), -1)
-            cv2.putText(marked_crop, label_text,(x, y - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                0.7, (0, 255, 0), 2)
-        return aggregated, marked_crop
-
-    def _identify_anchor_positions(self):
-        """Find reliable positions of multi-part numbers"""
-        anchors = defaultdict(list)
-        for num in self.position_records:
-            if len(num) > 1 or '.' in num:
-                coords = np.array(self.position_records[num])
-                if len(coords) > 0:
-                    anchors[num] = self._robust_median(coords)
-        return anchors
-
-    def _filter_coordinates(self, coords, current_num, anchors):
-        """
-        Remove coordinates conflicting with verified anchors
-        """
-        if len(coords) == 0: return []
-
-        invalid_mask = np.zeros(len(coords), dtype=bool)            # Check against all relevant anchor
-        parent_numbers = self._get_parent_numbers(current_num)      # Get potential parent numbers from whitelist
-
-        for parent_num in parent_numbers:
-            if parent_num in anchors:
-                anchor_pos = anchors[parent_num]
-                # Vectorized distance calculation
-                distances = np.sqrt(
-                    (coords[:, 0] - anchor_pos[0]) ** 2 +
-                    (coords[:, 1] - anchor_pos[1]) ** 2
-                )
-                invalid_mask |= distances < self._dynamic_threshold(parent_num)
-
-        return coords[~invalid_mask]
-
-    def _robust_median(self, coords):
-        """Outlier-resistant median calculation using IQR"""
-        if len(coords) < 3:
-            return np.median(coords, axis=0).astype(int)
-
-        q1 = np.percentile(coords, 25, axis=0)
-        q3 = np.percentile(coords, 75, axis=0)
-        iqr = q3 - q1
-        inlier_mask = (
-                (coords >= q1 - 1.5 * iqr) &
-                (coords <= q3 + 1.5 * iqr)
-        ).all(axis=1)
-        return np.median(coords[inlier_mask], axis=0).astype(int)
-
-    def _get_parent_numbers(self, num):
-        """Get possible parent numbers from whitelist"""
-        return [n for n in self.number_whitelist
-                if num in n.replace('.', '') and n != num]
-
-    def _dynamic_threshold(self, parent_num):
-        """Adaptive threshold based on number format"""
-        if '.' in parent_num:
-            return self.max_x_variance * 1.5
-        return self.max_x_variance * len(parent_num)
+        parts = normalized.split('.')                               # Split into components
+        if len(parts) == 1:
+            return parts[0] or '0'                                  # Handle empty string case
+        integer_part = parts[0] or '0'
+        decimal_part = parts[1][:1]                                 # Take only first decimal digit
+        return f"{integer_part}.{decimal_part}"
 
     def diff_image(
             self,
             img_path_dry: str,
             img_path_wet: str
-    ) -> tuple:
+    ):
         """
-        TODO: complete documentation
+        Takes the image before and after a drop of analyte solution is dropped.
+        Use contract to find the ROI
         :returns:
-            tuple: (heatmap_path, (center_x, center_y, diameter))
-                   - heatmap_path: path to generated heatmap image
-                   - coordinates: tuple of (x, y, diameter) or None
+            diff_map: path to generated heatmap image,
+            coordinates: tuple of (x, y, diameter) or None
         """
-        # Load and validate images
-        img_dry = self.crop_image(cv2.imread(img_path_dry))
+        img_dry = self.crop_image(cv2.imread(img_path_dry))         # Load and validate images
         img_wet = self.crop_image(cv2.imread(img_path_wet))
-
-        wet_path = Path(img_path_wet)
 
         if img_dry is None or img_wet is None:
             self.logger.error("Failed to load one or both images")
-            return (None, None)
-
+            return None, None
         if img_dry.shape != img_wet.shape:
             self.logger.error("Image dimensions mismatch")
-            return (None, None)
+            return None, None
 
-        # Calculate perceptual color difference
-        lab_dry = cv2.cvtColor(img_dry, cv2.COLOR_BGR2LAB)
+        lab_dry = cv2.cvtColor(img_dry, cv2.COLOR_BGR2LAB)          # Calculate perceptual color difference
         lab_wet = cv2.cvtColor(img_wet, cv2.COLOR_BGR2LAB)
 
-        delta_e = np.sqrt(
+        delta_e = np.sqrt(                                          # Generate differential image
             np.square(lab_dry[:, :, 1].astype(np.float32) - lab_wet[:, :, 1]) +
             np.square(lab_dry[:, :, 2].astype(np.float32) - lab_wet[:, :, 2])
         )
-
-        # Generate heatmap
         norm_diff = cv2.normalize(delta_e, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-        heatmap = cv2.applyColorMap(norm_diff, cv2.COLORMAP_JET)
-        heatmap_path = wet_path.parent / f"{wet_path.stem}_heatmap.png"
-        cv2.imwrite(str(heatmap_path), heatmap)
+        diff_map = cv2.applyColorMap(norm_diff, cv2.COLORMAP_JET)
 
-        # Analyze change region
         blurred = cv2.GaussianBlur(delta_e, (51, 51), 0)
-        _, max_val, _, max_loc = cv2.minMaxLoc(blurred)
+        _, max_val, _, max_loc = cv2.minMaxLoc(blurred)             # Analyze change region
 
         if max_val < 5:
             self.logger.info("No significant changes detected")
-            return (heatmap_path, None)
+            return diff_map, None
 
-        # Calculate weighted centroid
-        y_grid, x_grid = np.indices(delta_e.shape)
+        y_grid, x_grid = np.indices(delta_e.shape)                  # Calculate weighted centroid
         weights = np.maximum(blurred - max_val * 0.5, 0)
         total_weight = np.sum(weights)
 
         if total_weight < 1e-6:
-            return (heatmap_path, None)
-
+            return diff_map, None
         center_x = np.sum(x_grid * weights) / total_weight
         center_y = np.sum(y_grid * weights) / total_weight
 
-        # Calculate effective diameter
         x_dev = np.sqrt(np.sum(weights * (x_grid - center_x) ** 2) / total_weight)
         y_dev = np.sqrt(np.sum(weights * (y_grid - center_y) ** 2) / total_weight)
-        diameter = 2.3548 * np.sqrt(x_dev ** 2 + y_dev ** 2)                  # FWHM conversion
-        return (
-            heatmap_path,
-            (int(center_x), int(center_y), int(diameter))
+        diameter = 2.3548 * np.sqrt(x_dev ** 2 + y_dev ** 2)        # Calculate effective diameter
+        return diff_map, (int(center_x), int(center_y), int(diameter))
+
+    def aggregate_positions(self):
+        """Simple aggregation of positions by median with counts"""
+        aggregated = {}
+        for num, polygons in self.position_records.items():
+            try:
+                bboxes = []                                         # Convert polygons to bounding boxes
+                for poly in polygons:
+                    x_coords = [p[0] for p in poly]
+                    y_coords = [p[1] for p in poly]
+                    bboxes.append([
+                        min(x_coords),  # x_min
+                        min(y_coords),  # y_min
+                        max(x_coords),  # x_max
+                        max(y_coords)  # y_max
+                    ])
+
+                median_box = np.median(bboxes, axis=0).astype(int)  # Calculate median position
+                aggregated[num] = {
+                    'bbox': median_box,
+                    'count': len(bboxes),
+                    'all_boxes': bboxes                             # For outlier removal
+                }
+            except Exception as e:
+                self.logger.error(f"Aggregation failed for {num}: {str(e)}")
+        return aggregated
+
+    def remove_outliers(self, aggregated_data, max_deviation=50):
+        """Remove positions deviating too far from median"""
+        filtered = {}
+        for num, data in aggregated_data.items():
+            try:
+                median = data['bbox']
+                boxes = np.array(data['all_boxes'])
+                distances = np.abs(boxes - median)
+
+                outlier_mask = (                                     # Create outlier mask
+                        (distances[:, 0] < max_deviation) &  # x_min
+                        (distances[:, 1] < max_deviation) &  # y_min
+                        (distances[:, 2] < max_deviation) &  # x_max
+                        (distances[:, 3] < max_deviation)  # y_max
+                )
+
+                filtered_boxes = boxes[outlier_mask]
+                if filtered_boxes.size == 0:
+                    continue
+                filtered[num] = {
+                    'bbox': np.median(filtered_boxes, axis=0).astype(int),
+                    'count': len(filtered_boxes)
+                }
+            except Exception as e:
+                self.logger.error(f"Outlier removal failed for {num}: {str(e)}")
+        return filtered
+
+    def label_image(self, crop_image, filtered_data):
+        """Draw labels with count and color patches"""
+        labeled = crop_image.copy()
+
+        for num, data in filtered_data.items():
+            x_min, y_min, x_max, y_max = data['bbox']
+            count = data['count']
+
+            data['color'] = self._get_reference_color(data['bbox'], crop_image)
+            data['read_pos'] = {
+                'x': x_min,
+                'y': int(2 * y_max - y_min),
+                'width': x_max - x_min,
+                'height': int((y_max - y_min) * 2)
+            }
+
+            text = f"{num} ({count})"                               # Draw number and count
+            (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 2, 2)
+            text_x = max(x_min, 0)
+            text_y = max(y_min - th // 2, th)
+            cv2.putText(labeled, text, (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
+            avg_color = self._get_reference_color(data['bbox'], crop_image)
+            box_height = y_max - y_min
+            color_y1 = y_max + box_height
+            color_y2 = color_y1 + int(box_height * 2)
+
+            cv2.rectangle(labeled,
+                          (x_min, color_y1),
+                          (x_max, color_y2),
+                          (0, 255, 0), 2)  # 2 pixels thick, no fill
+        return labeled
+
+    def read_ph_from_diff(
+            self,
+            image_path: str,
+            diff_coordinates: Tuple[int, int, int],  # (center_x, center_y, diameter)
+            aggregated_nums: Dict[str, Dict]
+    ):
+        """
+        Reads pH value from automatically detected region of interest
+        :param image_path: Path to the input image
+        :param diff_coordinates: Tuple from diff_image (center_x, center_y, diameter)
+        :param aggregated_nums: Filtered data from remove_outliers()
+        :returns: Tuple (estimated pH value, annotated image)
+        """
+        try:
+            # Load and prepare image
+            image = self.load_image(image_path)
+            crop = self.crop_image(image)
+            directory, file_name = os.path.split(image_path)
+            file_name_no_extension = file_name[:-4]
+
+            center_x, center_y, diameter = diff_coordinates         # Calculate ROI from diff coordinates
+            radius = diameter // 4                                  # Use full detection diameter for reading
+            annotated = crop.copy()                                 # Create annotated image
+
+            cv2.circle(annotated,                                   # Draw measurement circle (thicker yellow border)
+                       (center_x, center_y), radius,
+                       (0, 255, 255),  # Yellow color
+                       3)  # Thicker border
+
+            # Extract ROI color from circular area
+            y, x = np.ogrid[:crop.shape[0], :crop.shape[1]]
+            mask = (x - center_x) ** 2 + (y - center_y) ** 2 <= radius ** 2
+            read_roi = crop[mask]
+
+            if read_roi.size == 0:
+                raise ValueError("Empty circular ROI")
+
+            roi_color = np.mean(read_roi, axis=0)
+            self.logger.info(f'ROI Color (BGR): {roi_color.astype(int)}')
+
+            # Find closest pH match
+            color_distances = {
+                ph: np.linalg.norm(roi_color - self._get_reference_color(data['bbox'], crop))
+                for ph, data in aggregated_nums.items()
+            }
+
+            if not color_distances:
+                raise ValueError("No reference colors available")
+
+            closest_ph = min(color_distances.items(), key=lambda x: x[1])[0]
+
+            # Draw pH text at circle top
+            text_pos = (center_x - 20, center_y - radius - 10)
+            cv2.putText(annotated, f"pH: {closest_ph}",
+                        text_pos, cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7, (0, 255, 255), 2)  # Yellow text
+            return closest_ph, annotated
+
+        except Exception as e:
+            self.logger.error(f"pH reading failed: {str(e)}")
+        return str(e), crop if 'crop' in locals() else None
+
+    @staticmethod
+    def _get_reference_color(bbox, crop_image):
+        """Helper to get color from reference number area"""
+        x_min, y_min, x_max, y_max = bbox
+        box_height = y_max - y_min
+        color_y1 = y_max + box_height
+        color_y2 = min(y_max + 3 * box_height, crop_image.shape[0])
+
+        if color_y1 >= color_y2:
+            return np.array([0, 0, 0])
+
+        color_roi = crop_image[color_y1:color_y2, x_min:x_max]
+        return np.mean(color_roi, axis=(0, 1)) if color_roi.size > 0 else np.array([0, 0, 0])
+
+class TesseractAnalyzer(PhotoAnalyzer):
+    LOGGER_NAME = "OCR.Tesseract"
+    def __init__(self):
+        super().__init__()
+        with open(Path(__file__).resolve().parent / 'image_client_settings.yaml', 'r') as file:
+            data = yaml.safe_load(file)
+        self.path_tesseract = data['Path_Tesseract']
+        pytesseract.pytesseract.tesseract_cmd = self.path_tesseract
+
+    def text_detection(self,processed_image: np.ndarray):
+        """
+        Tesseract-specific text detection with pH paper optimizations
+        """
+        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789.'
+        detection_data = pytesseract.image_to_data(
+            processed_image,
+            config=custom_config,
+            output_type=pytesseract.Output.DICT
         )
+
+        results = []                                       # Init a dict to store the locations of the numbers
+        for i in range(len(detection_data['text'])):
+            raw_text = detection_data['text'][i].strip()
+            if not raw_text:
+                continue                                            # Skip empty or non-numeric text
+            normalized = self._base_normalization(raw_text)         # Universal normalization
+
+            if normalized in self.number_whitelist:                 # Store only if in whitelist
+                left = detection_data['left'][i]
+                top = detection_data['top'][i]
+                width = detection_data['width'][i]
+                height = detection_data['height'][i]
+
+                results.append({
+                    'ph_value': normalized,
+                    'bounding_box': [
+                        (left, top),
+                        (left + width, top),
+                        (left + width, top + height),
+                        (left, top + height)
+                    ],
+                    'raw_text': raw_text                            # For debugging OCR errors
+                })
+        return results
+
+    def find_num_loc_colors(
+            self,
+            image: np.ndarray,
+            contrast: float,
+            brightness: int
+    ):
+        crop = self.crop_image(image)
+        grey = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)               # Convert image to greyscale for OCR
+        enhanced_grey = self.enhance_image(grey, contrast, brightness)
+        denoised_grey = cv2.GaussianBlur(enhanced_grey, (5, 5), 0)
+
+        num_local = self.text_detection(denoised_grey)              # OCR w/ tesseract, num_local has no color info
+        if num_local:                                               # Update num_local to include color info
+            marked_crop, num_local = self.capture_colors(crop, num_local)
+        else:
+            marked_crop = crop
+        return marked_crop, denoised_grey, num_local
 
     def tesseract_ocr_optimization_flow(
             self,
-            color_image: np.ndarray,      # Loaded color image as numpy array
-            step=25                 # Default opt parameter
+            color_image: np.ndarray,
+            step: int = 25,
+            save_iterations: bool = False,
+            output_dir: Path = None
+    ) -> Tuple[Dict, np.ndarray, np.ndarray, plt.Figure]:
+        """
+        Optimize OCR parameters through contrast/brightness grid search
+        :returns:
+            filtered: The filtered information of known pH value and colors from the same image
+            labeled_image: np.ndarray, the cropped color image with pH numbers marked on them
+            ocr_viz: np.ndarray, visualization of the OCR mapped on cropped image
+            opt_plot: Image object (plot can be saved with matplotlib)
+        """
+        self.logger.info("Starting Tesseract OCR optimization flow")
+        self.position_records = defaultdict(list)
+
+        crop = self.crop_image(color_image)
+        detection_viz = np.zeros(crop.shape[:2], dtype=np.uint16)
+        brightness_steps = range(-200, 201, step)
+        contrast_steps = [i / 100 for i in range(0, 301, step)]
+        opt_results = np.zeros((len(brightness_steps), len(contrast_steps)))
+        max_num = 0
+
+        detections_dir = None
+        if save_iterations and output_dir:                              # For debugging, save the iteration images>0 OCRs
+            detections_dir = output_dir / "ocr_detections"
+            detections_dir.mkdir(parents=True, exist_ok=True)
+            self.logger.info(f"Saving iteration images to {detections_dir}")
+
+        for j_idx, brightness in enumerate(brightness_steps):
+            for i_idx, contrast in enumerate(contrast_steps):
+                try:
+                    marked_crop, _, detections = self.find_num_loc_colors(
+                        color_image, contrast=contrast, brightness=brightness
+                    )
+
+                    current_count = len(detections)                     # Add detection results to positional records
+                    opt_results[j_idx, i_idx] = current_count
+                    for detection in detections:
+                        ph_value = detection['ph_value']
+                        polygon = detection['bounding_box']
+                        self.position_records[ph_value].append(polygon)
+
+                    self._update_detection_matrix(detections, detection_viz)
+                    self.logger.info(
+                        f"Trying contrast={contrast}, brightness={brightness} found {current_count} numbers."
+                    )
+
+                    if save_iterations and current_count > 0 and detections_dir:
+                        iter_filename = (f"contrast_{contrast/100:.2f}_brightness_{brightness}.jpg")
+                        output_path = detections_dir / iter_filename
+                        cv2.imwrite(str(output_path), marked_crop)
+                        self.logger.debug(f"Saved iteration: {output_path}")
+                    if current_count > max_num:
+                        max_num = current_count
+
+                except Exception as e:
+                    self.logger.error(f"Error processing {contrast=:.2f}, {brightness=}: {str(e)}")
+
+        aggregated = self.aggregate_positions()
+        filtered = self.remove_outliers(aggregated)
+        labeled_image = self.label_image(crop, filtered)
+        ocr_viz = self._create_ocr_visualization(detection_viz)
+        opt_plot = self._create_optimization_plot(opt_results, brightness_steps, contrast_steps)
+
+        self.logger.info(f"Optimization complete. Max detections: {max_num}")
+        return filtered, labeled_image, ocr_viz, opt_plot
+
+    @staticmethod
+    def _update_detection_matrix(
+            detections: List[Dict],
+            matrix: np.ndarray
+    ) -> None:
+        """Update detection frequency matrix"""
+        for entry in detections:
+            x0, y0 = entry['bounding_box'][0]
+            x1 = entry['bounding_box'][1][0]
+            y2 = entry['bounding_box'][2][1]
+            matrix[y0:y2, x0:x1] += 1
+
+    @staticmethod
+    def _create_ocr_visualization(detection_matrix: np.ndarray) -> np.ndarray:
+        """Generate OCR detection visualization"""
+        normalized = 255 - (detection_matrix / np.max(detection_matrix) * 255).astype(np.uint8) \
+            if np.max(detection_matrix) > 0 else np.full_like(detection_matrix, 255, np.uint8)
+        return cv2.cvtColor(normalized, cv2.COLOR_GRAY2BGR)
+
+    @staticmethod
+    def _create_optimization_plot(
+            opt_results: np.ndarray,
+            brightness_steps: range,
+            contrast_steps: List[float]
+    ) -> plt.Figure:
+        """Generate parameter optimization heatmap plot"""
+        fig, ax = plt.subplots(figsize=(10, 8))
+        im = ax.imshow(opt_results, aspect='auto',
+                       extent=(contrast_steps[0], contrast_steps[-1],
+                               brightness_steps[0], brightness_steps[-1]),
+                       origin='lower')
+
+        plt.colorbar(im, ax=ax, label='Numbers Recognized')
+        ax.set(
+            title='OCR Parameter Optimization',
+            xlabel='Contrast (1.0-3.0)',
+            ylabel='Brightness (-200-200)'
+        )
+        plt.close(fig)  # Prevent duplicate displays
+        return fig
+
+class CloudVisionAnalyzer(PhotoAnalyzer):
+    LOGGER_NAME = "OCR.CloudVision"
+
+    def __init__(self):
+        super().__init__()
+        self.client = vision.ImageAnnotatorClient()                 # Setting up google cloud API
+
+    def text_detection(self, color_image: np.ndarray):
+        """
+        Cloud Vision text detection with pH paper specialization
+        """
+        _, encoded_image = cv2.imencode(".jpg", color_image)
+        image_obj = vision.Image(content=encoded_image.tobytes())   # Convert np.ndarry to Image Object
+        response = self.client.document_text_detection(image=image_obj)
+
+        results = []
+        for page in response.full_text_annotation.pages:
+            for block in page.blocks:
+                for paragraph in block.paragraphs:
+                    for word in paragraph.words:
+                        raw_text = ''.join([symbol.text for symbol in word.symbols])
+
+                        normalized = self._base_normalization(raw_text) # Universal normalization
+
+                        vertices = [(vertex.x, vertex.y)        # Get polygon vertices
+                                    for vertex in word.bounding_box.vertices]
+                        results.append({
+                            'ph_value': normalized,
+                            'bounding_box': vertices,
+                            'raw_text': raw_text                # For debugging
+                        })
+        if response.error.message:
+            raise Exception(f'{response.error.message}')
+        return results
+
+    def find_num_loc_colors(
+            self,
+            image: np.ndarray
     ):
         """
-        returns:
-            aggregated_numbers: The information of known pH value and colors from the same image
-            marked_crop: np.ndarray, the cropped color image with pH numbers marked on them
-            ocr_detection_viz: np.ndarray, visualization of the OCR mapped on cropped grey scale image
-            opt_heatmap: Image object (plot can be save with matplotlib)
+        Get the locations and colors of numbers using Google Cloud Vision API
         """
-        crop = self.crop_image(color_image)                                       # Cropped color image
-        detection_matrix = np.zeros(crop.shape[:2], dtype=np.uint16)
+        crop = self.crop_image(image)
+        num_local = self.text_detection(crop)
 
-        brightness_steps = range(-200, 201, step)                           # Initialize results matrix of OCR
-        contrast_steps = [i / 100 for i in range(0, 301, step)]             # 1.00-3.00 in steps
-        opt_results = np.zeros((len(brightness_steps), len(contrast_steps)))
-        opt_contrast, opt_brightness, max_num = 0, 0, 0
+        if num_local:
+            marked_crop, num_local = self.capture_colors(crop, num_local)
+        else:
+            marked_crop = crop
+        return marked_crop, crop, num_local
 
-        for j_idx, j in enumerate(brightness_steps):  # Optimization loop
-            for i_idx, i in enumerate(contrast_steps):
-                contrast = i  # Get current contrast value
-                _, _, num_loc = self.find_num_loc_colors_tess(color_image, contrast=contrast, brightness=j)
-                current_count = len(num_loc)
-                self.logger.info(f"Trying contrast={i}, brightness={j} found {current_count} numbers.")
+    def google_cloud_ocr_flow(
+            self,
+            image: np.ndarray,
+            output_dir: Path = None
+    ) -> Tuple[Dict, np.ndarray, np.ndarray, plt.Figure]:
+        """
+        Google Cloud OCR processing flow without parameter optimization
+        :returns:
+            filtered: Filtered data of pH values and positions
+            labeled_image: Image with pH numbers marked
+            ocr_viz: Visualization of OCR detections
+            opt_plot: Placeholder figure (no optimization performed)
+        """
+        self.logger.info("Starting Google Cloud OCR flow")
+        self.position_records = defaultdict(list)  # Reset for each run
 
-                if num_loc:
-                    for num in num_loc:
-                        x, y, w, h = num_loc[num]['coordinates']
-                        opt_results[j_idx, i_idx] = current_count           # Store results in OCR optimization matrix
-                        detection_matrix[y:y + h, x:x + w] += 1             # Store results in heatmap
-                        self.position_records[num].append((x, y, w, h))     # Add found positions to aggregated records
-                if current_count >= max_num:                                # Track optimal parameters (optional)
-                    max_num = current_count
+        # Process image once
+        marked_crop, crop, detections = self.find_num_loc_colors(image)
+        pprint(detections)
 
-        # Visualize the optimization of contrast and brightness using a heatmap
-        opt_heatmap, axis = plt.subplots(figsize=(8, 8))
-        im = axis.imshow(opt_results, aspect='auto', extent=(0.0, 3.0, -200, 200), origin='lower')
-        plt.colorbar(im, label='Numbers Recognized')
-        axis.set_xlabel('Contrast')
-        axis.set_ylabel('Brightness')
-        axis.set_title('Number Recognition Performance Heatmap')
-        axis.set_xticks(np.arange(0.0, 3.0, 0.1))                                # Add grid lines to plot
-        axis.set_yticks(np.arange(-200, 200, 10))
+        # Update position records with detected bounding boxes
+        for detection in detections:
+            ph_value = detection['ph_value']
+            polygon = detection['bounding_box']
+            self.position_records[ph_value].append(polygon)
 
-        # Map OCR results onto cropped images, normalize to 0-255 with higher counts = darker
+        # Create detection matrix for visualization
+        detection_viz = np.zeros(crop.shape[:2], dtype=np.uint16)
+        self._update_detection_matrix(detections, detection_viz)
+
+        # Aggregate and filter positions
+        aggregated = self.aggregate_positions()
+
+        # Label the image with numbers and colors
+        labeled_image = self.label_image(crop, aggregated)
+
+        # Generate OCR visualization
+        ocr_viz = self._create_ocr_visualization(detection_viz)
+
+        # Dummy optimization plot (no optimization performed)
+        fig = plt.figure()
+        plt.close(fig)  # Close to prevent display
+
+        self.logger.info("Google Cloud OCR flow completed successfully.")
+        return aggregated, labeled_image, ocr_viz, fig
+
+    @staticmethod
+    def _update_detection_matrix(
+            detections: List[Dict],
+            matrix: np.ndarray
+    ) -> None:
+        """Update detection frequency matrix for visualization"""
+        for entry in detections:
+            x0, y0 = entry['bounding_box'][0]
+            x1 = entry['bounding_box'][1][0]
+            y2 = entry['bounding_box'][2][1]
+            matrix[y0:y2, x0:x1] += 1
+
+    @staticmethod
+    def _create_ocr_visualization(detection_matrix: np.ndarray) -> np.ndarray:
+        """Generate OCR detection visualization heatmap"""
         if np.max(detection_matrix) > 0:
             normalized = 255 - (detection_matrix / np.max(detection_matrix) * 255).astype(np.uint8)
         else:
             normalized = np.full_like(detection_matrix, 255, dtype=np.uint8)
-        ocr_detection_viz = cv2.cvtColor(normalized, cv2.COLOR_GRAY2BGR)       # Convert to 3-channel "white" background
-
-        aggregated_numbers, marked_crop = self.aggregate_viz_positions(crop) # Aggregate positions after all iterations
-        return aggregated_numbers, marked_crop, ocr_detection_viz, opt_heatmap
-
-    def read_ph(
-            self,
-            read_coord: Tuple,
-            read_width: int,
-            image_path,  # Path to image
-            aggregated_nums: Dict
-    ):
-        """
-        This function will highlight the Region of Interest (ROI) to read the pH of the wet pH paper
-        :param read_coord: (X,Y) coordinate of the top left corner of the ROI
-        :param read_width: width the square-shaped ROI
-        :param image_path: path to the target image
-        :param aggregated_nums: The information of known pH value and colors from the same image
-        :returns:
-            file: image with ROI highlighted
-            ph: pH value
-        """
-        image = analyzer.load_image(image_path)
-        crop = self.crop_image(image)
-        directory, file_name = os.path.split(image_path)
-        file_name_no_extension = file_name[:-4]
-
-        # Use aggregated numbers for pH reading
-        if len(aggregated_nums) >= 10:  # Reduced threshold for partial results
-            try:
-                # Highlight ROI and read the average color from it
-                x1 = read_coord[0]
-                x2 = read_coord[0] + read_width
-                y1 = read_coord[1]
-                y2 = read_coord[1] + read_width
-                read_roi = crop[y1:y2, x1:x2]
-                avg_color_per_row = np.average(read_roi, axis=0)
-                avg_color = np.average(avg_color_per_row, axis=0)
-                self.logger.info(f'The color of the ROI:'
-                                 f'({int(avg_color[0])}, {int(avg_color[1])}, {int(avg_color[2])})')
-
-                # Calculate the Euclidean distance between the ROI and all colors in aggregated data
-                color_dist = {}
-                for num in aggregated_nums:
-                    num_color = aggregated_nums[num]["color"]
-                    color_dist[num] = np.linalg.norm(avg_color - num_color)
-
-                sorted_color_dist = dict(sorted(color_dist.items(), key=lambda item: item[1]))
-                closest_ph = list(sorted_color_dist.keys())[0]
-                self.logger.info(f"***\nThe closest pH value is {closest_ph}.\n***")
-
-                crop_ph = crop.copy()
-                cv2.rectangle(crop_ph, (x1, y1), (x2, y2), (255, 255, 0), 2)
-                cv2.putText(crop_ph, f"pH: {closest_ph}",
-                            (read_coord[0], read_coord[1] - 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-
-                # Save and return results
-                self.save_image(crop_ph,f'{file_name_no_extension}_ph_result.png', directory)
-                return closest_ph, crop_ph
-
-            except Exception as e:
-                self.logger.error(f"pH reading failed: {str(e)}")
-                return str(e), crop
-        return 'Insufficient detections', crop
+        return cv2.cvtColor(normalized, cv2.COLOR_GRAY2BGR)
 
 
 if __name__ == "__main__":
-    analyzer = PhotoAnalyzer()
 
-    # Macbook setting override
-    pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
+    # # Load images
+    # path_to_image_dry = ("photos/Simple_workflow/ph_10/capture_20250226-135950_200200200.jpg")
+    # path_to_image_wet = ("photos/Simple_workflow/ph_10/capture_20250226-140013_200200200.jpg")
 
     # Load images
-    path_to_image_dry = ("photos/capture_20250228-143528_255255255.jpg")
-    path_to_image_wet = ("photos/capture_20250228-143550_255255255.jpg")
+    path_to_image_dry = ("photos/capture_20250228-143619_255255255.jpg")
+    path_to_image_wet = ("photos/capture_20250228-143603_255255255.jpg")
     color_image = cv2.imread(path_to_image_wet)
+    output_dir = Path(path_to_image_wet).parent
 
     if not os.path.exists(path_to_image_wet):
-        analyzer.logger.error(f"Image not found: {path_to_image_wet}")
         raise FileNotFoundError(f"Image not found: {path_to_image_wet}")
     directory, file_name = os.path.split(path_to_image_wet)
     file_name_no_extension = file_name[:-4]
 
-    # Find ROI using contrast of wet and dry images
-    _, ROI = analyzer.diff_image(path_to_image_dry, path_to_image_wet)
-    analyzer.logger.info(f"ROI_X = {ROI[0]}, ROI_Y = {ROI[1]}, diameter = {ROI[2]}")
+    ## USE CASE 1: USE TESSERACT OCR
+    tesseract_analyzer = TesseractAnalyzer()
+    logging.basicConfig(level=logging.INFO)
 
-    ## USE CASE 1: USE TESSERACT
-    # Optimize the OCR parameters
-    steps = [40]
+    # Macbook setting override, comment off for Windows machines
+    pytesseract.pytesseract.tesseract_cmd = "/opt/homebrew/bin/tesseract"
+
+    # Find ROI using contrast of wet and dry images
+    differential_image, ROI = tesseract_analyzer.diff_image(path_to_image_dry, path_to_image_wet)
+    if differential_image is not None:
+        tesseract_analyzer.save_image(  # Save labelled crop
+            differential_image, f"tess_{file_name_no_extension}_diff_image.png", directory)
+    tesseract_analyzer.logger.info(f"ROI_X = {ROI[0]}, ROI_Y = {ROI[1]}, diameter = {ROI[2]}")
+
+    steps = [50]
     for step in steps:
         try:
-            aggregate_nums, labelled_crop, ocr_viz, opt_heat_map = (
-                analyzer.tesseract_ocr_optimization_flow(color_image, step=step))
-            analyzer.save_image(labelled_crop, f'{file_name_no_extension}_labelled_{step=}.png', directory)
-            analyzer.save_image(ocr_viz, f'{file_name_no_extension}_detections_{step=}.png', directory)
-            opt_heat_map.savefig(
-                f'photos/{file_name_no_extension}_opt_heatmap-{step=}.png', dpi=300, bbox_inches='tight'
+            filtered_data, labeled_image, ocr_viz, opt_heat_map = (
+                tesseract_analyzer.tesseract_ocr_optimization_flow(
+                    color_image, step=step, save_iterations=True, output_dir=output_dir
+                )
+            )
+            base_name = f"tess_{file_name_no_extension}_step{step}"      # Save all outputs to the original image directory
+            tesseract_analyzer.save_image(                          # Save labeled image
+                labeled_image,f"{base_name}_labeled.png", directory
+            )
+            tesseract_analyzer.save_image(                          # Save OCR visualization
+                ocr_viz,f"{base_name}_detections.png", directory
             )
 
-            if aggregate_nums:
-                pprint(aggregate_nums)
-                # result format:
-                # {'1.5': {'color': array([125.77467105, 33.32154605, 234.74095395]),
-                #          'coordinates': (np.int64(1053), np.int64(104), np.int64(64), np.int64(38)),
-                #          'count': 2},
-                #  '2.5':...
-                closest_ph, crop_ph = analyzer.read_ph(
-                (150,150),80,
-                path_to_image_wet, aggregate_nums
-                )
-                analyzer.logger.info(f"The pH = {closest_ph}.")
-            else:
-                analyzer.logger.error("No valid numbers detected")
-        except Exception as e:
-            analyzer.logger.error(f"Analysis failed: {str(e)}")
+            heatmap_path = Path(directory) / f"{base_name}_opt_heatmap.png"     # Save optimization heatmap plot
+            opt_heat_map.savefig(str(heatmap_path),dpi=300,bbox_inches='tight',facecolor='white')
 
-    # Google cloud API:
-    image = analyzer.load_image(path_to_image_wet)
-    google_pH = analyzer.text_detection_google_vision(image=image)
-    # result in this format:
-    # [{'bounding_box': [(2065, 820), (2255, 818), (2256, 899), (2066, 901)], 'ph_value': '0.0'},
-    #  {'bounding_box': [(2402, 817), (2585, 815), (2586, 895), (2403, 897)], 'ph_value': '0.5'},
-    #  ...
-    pprint(google_pH)
+            # Save numerical results
+            results_path = Path(directory) / f"{base_name}_results.txt"
+            with open(results_path, 'w') as f:
+                pprint(filtered_data, stream=f)
+
+            # pH reading using diff_image coordinates
+            if filtered_data and ROI is not None:
+                ph_value, ph_image = tesseract_analyzer.read_ph_from_diff(
+                    path_to_image_wet,
+                    ROI,
+                    filtered_data
+                )
+                tesseract_analyzer.logger.info(f"Final pH measurement: {ph_value}")
+                tesseract_analyzer.save_image(
+                    ph_image,
+                    f"{base_name}_ph_result.png",
+                    directory
+                )
+            else:
+                tesseract_analyzer.logger.error("No valid data for pH calculation")
+
+        except Exception as e:
+            tesseract_analyzer.logger.error(f"Analysis failed: {str(e)}")
+
+
+    ## USE CASE 2: USE GOOGLE CLOUD VISION OCR
+    cloud_analyzer = CloudVisionAnalyzer()
+    logging.basicConfig(level=logging.INFO)
+
+    # Find ROI using same dry/wet contrast method
+    differential_image, ROI = cloud_analyzer.diff_image(path_to_image_dry, path_to_image_wet)
+    if differential_image is not None:
+        cloud_analyzer.save_image(
+            differential_image, f"cloud_{file_name_no_extension}_diff_image.png", directory)
+    cloud_analyzer.logger.info(f"CLOUD ROI - X: {ROI[0]}, Y: {ROI[1]}, Diameter: {ROI[2]}")
+
+    try:
+        filtered_data, labeled_image, ocr_viz, _ = cloud_analyzer.google_cloud_ocr_flow(
+            color_image, output_dir=output_dir
+        )
+
+        base_name = f"cloud_{file_name_no_extension}"
+        cloud_analyzer.save_image(  # Save labeled image with color patches
+            labeled_image, f"{base_name}_labeled.png", directory
+        )
+        cloud_analyzer.save_image(  # Save detection frequency visualization
+            ocr_viz, f"{base_name}_detections.png", directory
+        )
+
+        # Save numerical results
+        results_path = Path(directory) / f"{base_name}_results.txt"
+        with open(results_path, 'w') as f:
+            pprint(filtered_data, stream=f)
+
+        # pH reading using same coordinates from diff_image
+        if filtered_data and ROI is not None:
+            ph_value, ph_image = cloud_analyzer.read_ph_from_diff(
+                path_to_image_wet,
+                ROI,
+                filtered_data
+            )
+            cloud_analyzer.logger.info(f"Cloud Vision pH: {ph_value}")
+            cloud_analyzer.save_image(
+                ph_image,
+                f"{base_name}_ph_result.png",
+                directory
+            )
+        else:
+            cloud_analyzer.logger.error("No valid data for pH calculation")
+
+    except Exception as e:
+        cloud_analyzer.logger.error(f"Cloud Vision analysis failed: {str(e)}")

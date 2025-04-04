@@ -1,7 +1,8 @@
 import os
 import socket
 import yaml
-from datetime import datetime
+import subprocess
+import paramiko
 from pathlib import Path
 from time import sleep
 from sdl_utils import get_logger
@@ -59,7 +60,7 @@ class PhotoClient:
         :return: absolute image path
         """
         # Create the photos directory if it does not exist already
-        output_dir = "photos"
+        output_dir = "photos-2025-03-26-pH"
         os.makedirs(output_dir, exist_ok=True)
         
         # Receive the image name and echo back to confirm

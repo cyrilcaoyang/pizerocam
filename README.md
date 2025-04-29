@@ -12,8 +12,15 @@ Pi Zero has limited RAM; SHH using the command-line interface (CLI) is recommend
 However, you can also use the Pi Connect Service to connect to Pi Zero.
 
   1. Assemble the hardware components.
+  
+  2. Make sure to turn on under SPI and I2C: 
+     ```
+     sudo raspi-config
+     ```
+
+     "Interface Options" -> turn on both SPI and I2C options
      
-     If you are using PiSugar (Wireless):
+     If you are using PiSugar:
      ```
      wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
      bash pisugar-power-manager.sh -c release
@@ -21,23 +28,23 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
      PiSugar will establish a web server through which you can check your battery status.
      Use the link at the end of the installation.
 
-  2. Clone this repo; 
+  4. Clone this repo; 
      ```
      git clone https://github.com/cyrilcaoyang/pizerocam/
      ```
      
-  3. Create a Python environment (it will be outside of the project folder, this will take some time)
+  5. Create a Python environment (it will be outside of the project folder, this will take some time)
      ```
      python -m venv picam_env --system-site-packages
      ```
      Make sure to use the flag at the end, otherwise, picamera2 package cannot be recognized.
      
-  4. Activate the venv
+  6. Activate the venv
      ```
      source picam_env/bin/activate
 
      ```
-  5. (Optional) Activate the environment every login session(SSH):
+  7. (Optional) Activate the environment every login session(SSH):
       
       ```
       nano ~/.profile
@@ -53,12 +60,12 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
       source ~/.profile
       ```
       
-  6. Install the LED driver code
+  8. Install the LED driver code
      ```
      pip3 install adafruit-circuitpython-neopixel pyyaml
      ```
     
-  7. Just navigate to the server.py code and start the server
+  9. Just navigate to the server.py code and start the server
      ```
      python server.py
      ```

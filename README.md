@@ -25,9 +25,8 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
      ```
      git clone https://github.com/cyrilcaoyang/pizerocam/
      ```
-     DO NOT enter the project folder yet
      
-  3. Create a Python environment (it will be outside of the project folder)
+  3. Create a Python environment (it will be outside of the project folder, this will take some time)
      ```
      python -m venv picam_env --system-site-packages
      ```
@@ -56,7 +55,7 @@ However, you can also use the Pi Connect Service to connect to Pi Zero.
       
   6. Install the LED driver code
      ```
-     pip3 install adafruit-circuitpython-neopixel
+     pip3 install adafruit-circuitpython-neopixel pyyaml
      ```
     
   7. Just navigate to the server.py code and start the server

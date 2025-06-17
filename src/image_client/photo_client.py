@@ -1,23 +1,21 @@
 import os
 import socket
-import yaml
 from pathlib import Path
 from time import sleep
+from dotenv import load_dotenv
 from sdl_utils import get_logger
 from sdl_utils import connect_socket, send_file_name, receive_file_name
 from sdl_utils import send_file_size, receive_file_size, receive_file
 
-# Get the directory where this script is located
-script_dir = Path(__file__).resolve().parent
+# Load environment variables from .env file
+load_dotenv()
 
-# Open and read the JSON file
-with open(script_dir / 'image_client_settings.yaml', 'r') as file:
-    data = yaml.safe_load(file)
-server_ip = data['Server_IP']
-server_port = data['ServerPort']
-buffer_size = data['BufferSize']
-chunk_size = data['ChunkSize']
-path_tesseract = data['Path_Tesseract']
+# Get settings from environment variables
+server_ip = os.getenv("SERVER_IP", "127.0.0.1")
+server_port = int(os.getenv("SERVER_PORT", 2222))
+buffer_size = int(os.getenv("BUFFER_SIZE", 2048))
+chunk_size = int(os.getenv("CHUNK_SIZE", 1024))
+path_tesseract = os.getenv("PATH_TESSERACT")
 
 
 class PhotoClient:

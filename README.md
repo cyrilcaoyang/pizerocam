@@ -4,6 +4,97 @@
 - Clients on any platform can request photos to be taken and sent over.
 - One use case is to read the pH according to the text and colour scheme on the pH scale.
 
+## Installation
+
+This package is composed of two main components: a `server` to be run on a Raspberry Pi with a camera, and a `client` that can be run on any computer to request and analyze photos.
+
+You can install the components separately depending on your needs.
+
+### Server-side Installation (on Raspberry Pi)
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/cyrilcaoyang/pizerocam/
+    cd pizerocam
+    ```
+
+2.  **Create a virtual environment:**
+    It is recommended to use the `--system-site-packages` flag to have access to system-level packages like `picamera2`.
+    ```bash
+    python3 -m venv venv --system-site-packages
+    source venv/bin/activate
+    ```
+
+3.  **Install the server package:**
+    This will install the server and all its dependencies.
+    ```bash
+    pip install .[server]
+    ```
+
+### Client-side Installation (on your computer)
+
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/cyrilcaoyang/pizerocam/
+    cd pizerocam
+    ```
+
+2.  **Create a Conda environment:**
+    ```bash
+    conda create -n pizerocam-client python=3.9
+    conda activate pizerocam-client
+    ```
+
+3.  **Install the client package:**
+    You have two options for installing the client, depending on which OCR engine you want to use.
+
+    **Option 1: Tesseract (Local OCR)**
+    This option uses the Tesseract engine to perform OCR locally on your machine.
+    ```bash
+    pip install .[client-tesseract]
+    ```
+    **Note on Tesseract:** You need to have Google's Tesseract OCR engine installed on your system. You can find installation instructions here: [Tesseract Installation](https://github.com/tesseract-ocr/tesseract/wiki)
+
+    **Option 2: Google Cloud Vision (Cloud-based OCR)**
+    This option uses the Google Cloud Vision API for OCR.
+    ```bash
+    pip install .[client-gcloud]
+    ```
+    **Note on Google Cloud:** You will need to set up a Google Cloud Platform project with the Vision API enabled and configure your authentication.
+
+### Developer Installation
+
+If you want to install all components for development (server, and both client types), you can use Conda for simplicity.
+
+1.  **Create a Conda environment:**
+    ```bash
+    conda create -n pizerocam-dev python=3.9
+    conda activate pizerocam-dev
+    ```
+
+2. **Install packages:**
+    ```bash
+    pip install .[server,client-tesseract,client-gcloud]
+    ```
+
+## Usage
+
+### Running the Server
+
+Navigate to the `src/picam_server` directory and run the server:
+
+```bash
+python server.py
+```
+
+### Running the Client
+
+Navigate to the `src/image_client` directory and run the interactive client:
+
+```bash
+python photo_client.py
+```
+
 ## Wireless pi-camera module on Raspberry Pi Zero 2 WH (Server)
 Please follow the instructions (to be added #TODO) to set up the Pi Zero
 

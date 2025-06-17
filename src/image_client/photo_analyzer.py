@@ -35,7 +35,6 @@ First install google cloud sdk and restart terminal
 import os
 import sys
 import cv2
-import yaml
 import re
 import numpy as np
 import pytesseract
@@ -46,6 +45,10 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 from google.cloud import vision
 from typing import Tuple, List, Dict
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Cropping parameters. Image will be cropped first TODO: add soft cropping with edge detection
 startY, endY, startX, endX = 600, 2000, 1000, 4400
@@ -60,17 +63,17 @@ class PhotoAnalyzer:
     def __init__(self, logger=None):
         self.logger = logger or self._create_class_logger()     # Initialize with existing logger or create default
 
-        script_dir = Path(__file__).resolve().parent            # Get the directory where this script is located
         self.position_records = defaultdict(list)               # Track positions of numbers in OCR
 
-        with open(script_dir / 'image_client_settings.yaml', 'r') as file:
-            data = yaml.safe_load(file)
-
-        self.expected_rows = data.get('Expected_Rows', 2)
-        self.max_y_variance = data.get('Max_Y_Var', 15)
-        self.max_x_variance = data.get('Max_X_Var', 30)
-        self.min_row_density = data.get('Min_Row_Density', 0.7)
-        self.number_whitelist = set(map(str, data['PH_Whitelist']))
+        # Get settings from environment variables
+        self.expected_rows = int(os.getenv('EXPECTED_ROWS', 2))
+        self.max_y_variance = int(os.getenv('MAX_Y_VAR', 15))
+        self.max_x_variance = int(os.getenv('MAX_X_VAR', 30))
+        self.min_row_density = float(os.getenv('MIN_ROW_DENSITY', 0.7))
+        
+        ph_whitelist_str = os.getenv('PH_WHITELIST', "")
+        self.number_whitelist = set(ph_whitelist_str.split(',')) if ph_whitelist_str else set()
+        
         self.logger.info("The whitelist is loaded as:")
         self.logger.info(f"{self.number_whitelist}")
 

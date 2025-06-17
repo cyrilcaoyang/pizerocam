@@ -9,7 +9,9 @@ description='Python utils package for self-driving labs'
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.8"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0"
+]
 
 # More at https://pypi.org/classifiers/
 classifiers = [
@@ -29,6 +31,31 @@ authors = [
     {name = "Yang Cao", email = "cyrilcaoyang@gmail.com"}
 ]
 
+[project.optional-dependencies]
+server = [
+    "picamera2",
+    "neopixel",
+    "RPi.GPIO"
+]
+client-tesseract = [
+    "opencv-python>=4.10.0",
+    "numpy==2.2.2",
+    "pillow==11.1.0",
+    "pytesseract==0.3.13",
+    "matplotlib",
+    "python-dotenv"
+]
+client-gcloud = [
+    "opencv-python>=4.10.0",
+    "numpy==2.2.2",
+    "pillow==11.1.0",
+    "matplotlib",
+    "google-cloud-vision",
+    "python-dotenv"
+]
+
+[tool.setuptools]
+packages = ["image_client", "picam_server"]
+
 [tool.setuptools.package-dir]
-image_client = 'src/image_client'
-picam_server = 'src/picam_server'
+"" = "src"

@@ -11,7 +11,7 @@ from sdl_utils import send_file_size, receive_file_size, receive_file
 load_dotenv()
 
 # Get settings from environment variables
-server_ip = os.getenv("SERVER_IP", "127.0.0.1")
+server_ip = os.getenv("SERVER_IP", "172.31.34.163")
 server_port = int(os.getenv("SERVER_PORT", 2222))
 buffer_size = int(os.getenv("BUFFER_SIZE", 2048))
 chunk_size = int(os.getenv("CHUNK_SIZE", 1024))

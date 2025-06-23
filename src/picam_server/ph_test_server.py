@@ -18,6 +18,9 @@ class PHTestServer(CameraServer):
     def __init__(self, host="0.0.0.0", port=server_port):
         super().__init__(host, port)
         self.motor_driver = self._init_motor_driver()
+        self.PWMA = 0
+        self.AIN1 = 1
+        self.AIN2 = 2
 
     def _init_motor_driver(self):
         # Initialize PCA9685 and motor
@@ -29,18 +32,20 @@ class PHTestServer(CameraServer):
 
     def run_motor(self):
         """
-        Run motor A for 2 seconds
+        Run motor A for 1 seconds at 50% speed
         """
         try:
             self.logger.info("Running motor...")
-            # Motor A: pins IN1, IN2 are connected to PWM channels 1, 2
-            # Set IN1 high, IN2 low to run forward
-            self.motor_driver.setMotorPwm(0, 4095) # Full speed
-            self.motor_driver.setMotorPwm(1, 0)
-            self.motor_driver.setMotorPwm(2, 0) # Make sure motor B is off
-            sleep(2)
+            # Set speed to 50%
+            self.motor_driver.setDutycycle(self.PWMA, 50)
+            
+            # Set direction to forward
+            self.motor_driver.setLevel(self.AIN1, 0)
+            self.motor_driver.setLevel(self.AIN2, 1)
+            sleep(1)
+            
             # Stop motor
-            self.motor_driver.setMotorPwm(0, 0)
+            self.motor_driver.setDutycycle(self.PWMA, 0)
             self.logger.info("Motor run complete.")
         except Exception as e:
             self.logger.error(f"Motor run failed: {e}")

@@ -85,7 +85,7 @@ class PhotoClient:
             if s == None:
                 return
             while True:
-                print("Options:\n1. Request photo\n2. Change LED color\n3. Exit")
+                print("Options:\n1. Request photo\n2. Change LED color\n3. Run motor\n4. Exit")
                 option = input("Enter your choice: ").strip()
 
                 if option == "1":
@@ -145,6 +145,17 @@ class PhotoClient:
                         print(f"Error during color change: {e}")
 
                 elif option == '3':
+                    try:
+                        s.sendall("RUN_MOTOR".encode('utf-8'))
+                        response = s.recv(buffer_size).decode('utf-8').strip()
+                        if response == "MOTOR_RUN_COMPLETE":
+                            print("Motor run complete.")
+                        else:
+                            print(f"Unexpected server response: {response}")
+                    except Exception as e:
+                        print(f"Error during motor run: {e}")
+
+                elif option == '4':
                     self.logger.info('Exiting')
                     s.close()
                     break

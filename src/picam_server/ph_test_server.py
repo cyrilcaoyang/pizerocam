@@ -37,7 +37,7 @@ class PHTestServer(CameraServer):
         try:
             self.logger.info("Running motor...")
             # Set speed to 50%
-            self.motor_driver.setDutycycle(self.PWMA, 50)
+            self.motor_driver.setDutycycle(self.PWMA, 20)
             
             # Set direction to forward
             self.motor_driver.setLevel(self.AIN1, 0)

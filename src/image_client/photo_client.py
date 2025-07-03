@@ -107,6 +107,7 @@ class PhotoClient:
                         # Send color change request
                         s.sendall("CHANGE_COLOR".encode('utf-8'))
 
+
                         # Wait for server's RGB request
                         response = s.recv(buffer_size).decode('utf-8').strip()
 

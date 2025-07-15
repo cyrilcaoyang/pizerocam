@@ -413,7 +413,7 @@ class TesseractAnalyzer(PhotoAnalyzer):
     LOGGER_NAME = "OCR.Tesseract"
     def __init__(self):
         super().__init__()
-        with open(Path(__file__).resolve().parent / 'image_client_settings.yaml', 'r') as file:
+        with open(Path(__file__).resolve().parent / 'image_req_client_settings.yaml', 'r') as file:
             data = yaml.safe_load(file)
         self.path_tesseract = data['Path_Tesseract']
         pytesseract.pytesseract.tesseract_cmd = self.path_tesseract
@@ -592,7 +592,7 @@ class CloudVisionAnalyzer(PhotoAnalyzer):
 
     def text_detection(self, color_image: np.ndarray):
         """
-        Cloud Vision text detection with pH paper specialization
+        Use Google Cloud Vision API to detect text in the image
         """
         _, encoded_image = cv2.imencode(".jpg", color_image)
         image_obj = vision.Image(content=encoded_image.tobytes())   # Convert np.ndarry to Image Object

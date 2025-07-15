@@ -1,190 +1,287 @@
-# PizeroCam
-- This project uses Raspberry Pi Zero 2W as a Server that takes still images with Pi Camera 3.
-- This project uses the Neopixel ring LED for illumination and the PiSugar project for UPS (optional).
-- Clients on any platform can request photos to be taken and sent over.
-- One use case is to read the pH according to the text and colour scheme on the pH scale.
+# PiZeroCam
+
+A Python package for remote camera control and pH analysis using Raspberry Pi Zero 2W.
+
+**Key Features:**
+- Remote camera control with LED illumination
+- Motor control for automated testing
+- pH value analysis from color grid images
+- Modular client/server architecture
+- Easy installation with optional dependencies
+- CLI tools for both client and server
+
+## Architecture
+
+PiZeroCam consists of two main modules:
+
+- **`image_server`**: Runs on Raspberry Pi Zero 2W with camera and motor hardware
+- **`image_req_client`**: Runs on any computer to request photos and analyze them
 
 ## Installation
 
-This package is composed of two main components: a `server` to be run on a Raspberry Pi with a camera, and a `client` that can be run on any computer to request and analyze photos.
+### Client Installation (on your computer)
 
-You can install the components separately depending on your needs.
+For basic photo requesting and pH analysis:
 
-### Server-side Installation (on Raspberry Pi)
+```bash
+git clone https://github.com/cyrilcaoyang/pizerocam.git
+cd pizerocam
+pip install .[client]
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/cyrilcaoyang/pizerocam/
-    cd pizerocam
-    ```
+Alternative client options:
+- `pip install .[client-tesseract]` - for local Tesseract OCR (requires Tesseract installation)
+- `pip install .` - base installation without OCR dependencies
 
-2.  **Create a virtual environment:**
-    It is recommended to use the `--system-site-packages` flag to have access to system-level packages like `picamera2`.
-    ```bash
-    python3 -m venv venv --system-site-packages
-    source venv/bin/activate
-    ```
+### Server Installation (on Raspberry Pi)
 
-3.  **Install the server package:**
-    This will install the server and all its dependencies.
-    ```bash
-    pip install .[server]
-    ```
+```bash
+git clone https://github.com/cyrilcaoyang/pizerocam.git
+cd pizerocam
+python3 -m venv venv --system-site-packages
+source venv/bin/activate
+pip install .[server]
+```
 
-### Client-side Installation (on your computer)
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/cyrilcaoyang/pizerocam/
-    cd pizerocam
-    ```
-
-2.  **Create a Conda environment:**
-    ```bash
-    conda create -n pizerocam-client python=3.9
-    conda activate pizerocam-client
-    ```
-
-3.  **Install the client package:**
-    You have two options for installing the client, depending on which OCR engine you want to use.
-
-    **Option 1: Tesseract (Local OCR)**
-    This option uses the Tesseract engine to perform OCR locally on your machine.
-    ```bash
-    pip install .[client-tesseract]
-    ```
-    **Note on Tesseract:** You need to have Google's Tesseract OCR engine installed on your system. You can find installation instructions here: [Tesseract Installation](https://github.com/tesseract-ocr/tesseract/wiki)
-
-    **Option 2: Google Cloud Vision (Cloud-based OCR)**
-    This option uses the Google Cloud Vision API for OCR.
-    ```bash
-    pip install .[client-gcloud]
-    ```
-    **Note on Google Cloud:** You will need to set up a Google Cloud Platform project with the Vision API enabled and configure your authentication.
+**Note:** Use `--system-site-packages` to access system-level packages like `picamera2`.
 
 ### Developer Installation
 
-If you want to install all components for development (server, and both client types), you can use Conda for simplicity.
+To install both client and server components:
 
-1.  **Create a Conda environment:**
-    ```bash
-    conda create -n pizerocam-dev python=3.9
-    conda activate pizerocam-dev
-    ```
-
-2. **Install packages:**
-    ```bash
-    pip install .[server,client-tesseract,client-gcloud]
-    ```
+```bash
+pip install .[client,server]
+```
 
 ## Usage
 
-### Running the Server
+### Quick Start with CLI Tools
 
-Navigate to the `src/picam_server` directory and run the server:
-
+**Start the server (on Raspberry Pi):**
 ```bash
-python server.py
+pizerocam-server
 ```
 
-### Running the Client
-
-Navigate to the `src/image_client` directory and run the interactive client:
-
+**Connect from client (on your computer):**
 ```bash
-python photo_client.py
+# Interactive session
+pizerocam-client --ip 192.168.1.100
+
+# Request photo and analyze pH
+pizerocam-client --ip 192.168.1.100 --photo --analyze
+
+# Change LED color to red
+pizerocam-client --ip 192.168.1.100 --led 255,0,0
+
+# Run motor
+pizerocam-client --ip 192.168.1.100 --motor
 ```
 
-## Wireless pi-camera module on Raspberry Pi Zero 2 WH (Server)
-Please follow the instructions (to be added #TODO) to set up the Pi Zero
+### Python API Usage
 
-Pi Zero has limited RAM; SHH using the command-line interface (CLI) is recommended. 
+**Client API:**
 
-However, you can also use the Pi Connect Service to connect to Pi Zero.
+```python
+from image_req_client import ImageReqClient
 
-  1. Assemble the hardware components.
-  
-  2. Make sure to turn on under SPI and I2C: 
-     ```
-     sudo raspi-config
-     ```
+# Create and connect to server
+client = ImageReqClient()
+client.connect("192.168.1.100")
 
-     "Interface Options" -> turn on both SPI and I2C options
-     
-     If you are using PiSugar:
-     ```
-     wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
-     bash pisugar-power-manager.sh -c release
-     ```
-     PiSugar will establish a web server through which you can check your battery status.
-     Use the link at the end of the installation.
+# Request photo and analyze
+image_path = client.request_photo()
+if image_path:
+    ph_value = client.analyze_photo(image_path)
+    print(f"pH value: {ph_value}")
 
-  4. Clone this repo; 
-     ```
-     git clone https://github.com/cyrilcaoyang/pizerocam/
-     ```
-     
-  5. Create a Python environment (it will be outside of the project folder, this will take some time)
-     ```
-     python -m venv picam_env --system-site-packages
-     ```
-     Make sure to use the flag at the end, otherwise, picamera2 package cannot be recognized.
-     
-  6. Activate the venv
-     ```
-     source picam_env/bin/activate
+# Control LED and motor
+client.change_led_color(255, 0, 0)  # Red LED
+client.run_motor()
 
-     ```
-  7. (Optional) Activate the environment every login session(SSH):
-      
-      ```
-      nano ~/.profile
-      ```
-      
-      Add the following line:
-      ```
-      source PATH_TO_ENVIRONMENT/bin/activate
-      ```
+# Disconnect
+client.disconnect()
 
-      Apply changes:
-      ```
-      source ~/.profile
-      ```
-      
-  8. Install the LED driver code
-     ```
-     pip3 install adafruit-circuitpython-neopixel pyyaml
-     ```
-    
-  9. Just navigate to the server.py code and start the server
-     ```
-     python server.py
-     ```
+# Or use as context manager
+with ImageReqClient() as client:
+    client.connect("192.168.1.100")
+    image_path, ph_value = client.request_and_analyze_photo()
+    print(f"Image: {image_path}, pH: {ph_value}")
+```
 
+**Server API:**
 
-      
-## Installing of the Client on the PC that runs the workflows (Client)
+```python
+from image_server import ImageServer
 
-  1. It is recommended to use the Conda environment (to be added)
-  2. Clone and install the sdl_utils package.
-     ```
-     clone ~~~~
-     pip install -e .
-     ```
-  3. For the demo, Python Imaging Library (PIL) (or the Pillow fork)
-     ```
-     pip install pillow
-     ```
-     Download and install Tesseract for OCR (which requires Python 3.6+)
-      - github.com/UB-Mannheim/tesseract/wiki
+# Create and start server
+server = ImageServer(host="0.0.0.0", port=2222)
+print(f"Server IP: {server.get_ip_address()}")
+server.start()  # Runs in background by default
 
-  4. Clone and install this package. DO pip install so you get all the required packages.
-     ```
-     clone https://github.com/cyrilcaoyang/pizerocam/
-     pip install -e .
-     ```
-    
-  5. Navigate to the client.py code and start the client
-     ```
-     python client.py
-     ```
+# Or use as context manager (blocking)
+with ImageServer() as server:
+    print(f"Server running at {server.get_ip_address()}")
+    # Server runs until context exits
+```
+
+**pH Analysis Standalone:**
+
+```python
+from image_req_client import ph_from_image
+
+# Analyze existing image
+ph_value = ph_from_image("path/to/image.jpg")
+print(f"pH: {ph_value}")  # Returns pH value or "NULL"
+```
+
+## Hardware Setup (Raspberry Pi Server)
+
+### Required Components
+- Raspberry Pi Zero 2W/WH
+- Pi Camera 3
+- NeoPixel ring LED
+- PCA9685 PWM driver (for motor control)
+- DC motor
+- Optional: PiSugar for UPS functionality
+
+### Setup Instructions
+
+1. **Enable interfaces:**
+   ```bash
+   sudo raspi-config
+   ```
+   Enable SPI and I2C under "Interface Options"
+
+2. **Install system dependencies:**
+   ```bash
+   sudo apt update
+   sudo apt install python3-picamera2
+   ```
+
+3. **Optional - Install PiSugar:**
+   ```bash
+   wget https://cdn.pisugar.com/release/pisugar-power-manager.sh
+   bash pisugar-power-manager.sh -c release
+   ```
+
+4. **Install PiZeroCam:**
+   ```bash
+   git clone https://github.com/cyrilcaoyang/pizerocam.git
+   cd pizerocam
+   python3 -m venv venv --system-site-packages
+   source venv/bin/activate
+   pip install .[server]
+   ```
+
+5. **Start the server:**
+   ```bash
+   pizerocam-server
+   ```
+
+### Hardware Connections
+
+**NeoPixel LED:**
+- Connect to GPIO pin (configured in server code)
+- Provides illumination for camera
+
+**Motor (via PCA9685):**
+- PWMA: Channel 0
+- AIN1: Channel 1  
+- AIN2: Channel 2
+- I2C address: 0x40
+
+## pH Analysis
+
+The pH analysis tool uses Google Cloud Vision API for OCR text detection and color analysis to determine pH values from test strips.
+
+### Features
+- Detects pH numbers (1-12) in grid layouts
+- Analyzes color blocks below detected numbers
+- Uses BGR color values and Euclidean distance for pH determination
+- Generates labeled output images for verification
+- Handles multi-digit number splitting intelligently
+
+### Requirements
+- Google Cloud Vision API credentials
+- Environment variable: `GOOGLE_APPLICATION_CREDENTIALS`
+
+### Configuration
+The analysis region is currently configured for coordinates (750, 1100, 150, 300). Modify in the source code as needed for your specific test strips.
+
+## API Reference
+
+### ImageReqClient Methods
+- `connect(ip)` - Connect to server
+- `disconnect()` - Disconnect from server  
+- `request_photo()` - Request and receive photo
+- `analyze_photo(filepath)` - Analyze photo for pH
+- `request_and_analyze_photo()` - Combined request and analysis
+- `change_led_color(r, g, b)` - Change LED color
+- `run_motor()` - Run motor
+
+### ImageServer Methods
+- `start(background=True)` - Start server
+- `stop()` - Stop server
+- `get_ip_address()` - Get server IP
+- `is_running()` - Check if running
+
+### CLI Options
+
+**pizerocam-client:**
+```
+--ip IP          Server IP address (required)
+--port PORT      Server port (default: 2222)
+--photo          Request photo
+--analyze        Analyze photo for pH (with --photo)
+--led R,G,B      Change LED color
+--motor          Run motor
+--interactive    Interactive session (default)
+```
+
+**pizerocam-server:**
+```
+--host HOST      Bind interface (default: 0.0.0.0)
+--port PORT      Listen port (default: 2222)
+--verbose        Enable verbose logging
+```
+
+## Development
+
+### Project Structure
+```
+pizerocam/
+├── src/
+│   ├── image_req_client/          # Client module
+│   │   ├── __init__.py
+│   │   ├── image_req_client.py    # Main client class
+│   │   ├── ph_grid_color_reader.py # pH analysis
+│   │   ├── photo_client.py        # Legacy client
+│   │   └── cli.py                 # CLI interface
+│   └── image_server/              # Server module
+│       ├── __init__.py
+│       ├── image_server.py        # Main server class
+│       ├── server.py              # Camera server
+│       ├── ph_test_server.py      # Extended server with motor
+│       ├── PCA9685.py            # Motor driver
+│       └── cli.py                # CLI interface
+├── examples/                      # Example scripts
+├── pyproject.toml                # Package configuration
+└── README.md
+```
+
+### Contributing
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+MIT License - see LICENSE file for details.
+
+## Support
+
+For issues and questions:
+- GitHub Issues: https://github.com/cyrilcaoyang/pizerocam/issues
+- Email: cyrilcaoyang@gmail.com

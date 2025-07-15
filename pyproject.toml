@@ -37,6 +37,14 @@ server = [
     "neopixel",
     "RPi.GPIO"
 ]
+client = [
+    "opencv-python>=4.10.0",
+    "numpy==2.2.2",
+    "pillow==11.1.0",
+    "matplotlib",
+    "google-cloud-vision",
+    "python-dotenv"
+]
 client-tesseract = [
     "opencv-python>=4.10.0",
     "numpy==2.2.2",
@@ -45,17 +53,13 @@ client-tesseract = [
     "matplotlib",
     "python-dotenv"
 ]
-client-gcloud = [
-    "opencv-python>=4.10.0",
-    "numpy==2.2.2",
-    "pillow==11.1.0",
-    "matplotlib",
-    "google-cloud-vision",
-    "python-dotenv"
-]
+
+[project.scripts]
+pizerocam-client = "image_req_client.cli:main_client"
+pizerocam-server = "image_server.cli:main_server"
 
 [tool.setuptools]
-packages = ["image_client", "picam_server"]
+packages = ["image_req_client", "image_server"]
 
 [tool.setuptools.package-dir]
 "" = "src"

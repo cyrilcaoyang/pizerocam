@@ -22,7 +22,7 @@ class SimplePhotoAnalyzer:
 
         # self.logger = logger
         script_dir = Path(__file__).resolve().parent  # Get the directory where this script is located
-        with open(script_dir / 'image_client_settings.yaml', 'r') as file:
+        with open(script_dir / 'image_req_client_settings.yaml', 'r') as file:
             data = yaml.safe_load(file)
 
         # Load whitelist and tolerance of OCR

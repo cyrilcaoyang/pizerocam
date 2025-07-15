@@ -6,6 +6,14 @@ from google.cloud import vision
 import itertools
 import argparse
 from pprint import pprint
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Set up Google Cloud credentials if provided in .env
+if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
 
 # --- CONFIG ---
 # Path to the image to analyze

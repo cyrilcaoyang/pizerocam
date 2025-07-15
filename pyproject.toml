@@ -11,7 +11,7 @@ license = {file = "LICENSE"}
 requires-python = ">=3.8"
 dependencies = [
     "pyyaml>=6.0",
-    "sdl_utils==0.1.0",
+    "sdl_utils==0.2.0",
     "netifaces>=0.11.0"
 ]
 
@@ -41,8 +41,8 @@ server = [
 ]
 client = [
     "opencv-python>=4.10.0",
-    "numpy==2.2.2",
-    "pillow==11.1.0",
+    "numpy>=2.2.2",
+    "pillow>=11.1.0",
     "matplotlib",
     "google-cloud-vision",
     "python-dotenv"

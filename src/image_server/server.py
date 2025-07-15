@@ -49,11 +49,114 @@ class CameraServer:
         return get_logger("WirelessCameraLogger")
 
     def _get_server_ip(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s_test:
-            s_test.connect(("8.8.8.8", 80))
-            server_ip = s_test.getsockname()[0]
-            self.logger.info(f"My IP address is : {server_ip}")
-            return server_ip
+        import os
+        
+        # Check for manual IP override via environment variable
+        manual_ip = os.getenv('PIZEROCAM_SERVER_IP')
+        if manual_ip:
+            self.logger.info(f"Using manual IP override: {manual_ip}")
+            return manual_ip
+        
+        # Try to detect Tailscale IP
+        tailscale_ip = self._detect_tailscale_ip()
+        if tailscale_ip:
+            return tailscale_ip
+        
+        # Fall back to original method
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s_test:
+                s_test.connect(("8.8.8.8", 80))
+                server_ip = s_test.getsockname()[0]
+                self.logger.info(f"Using socket-detected IP address: {server_ip}")
+                return server_ip
+        except Exception as e:
+            self.logger.error(f"Failed to detect IP address: {e}")
+            return "localhost"
+    
+    def _detect_tailscale_ip(self):
+        """Detect Tailscale IP address using multiple methods"""
+        # Method 1: Try netifaces (most reliable)
+        tailscale_ip = self._get_tailscale_ip_netifaces()
+        if tailscale_ip:
+            return tailscale_ip
+        
+        # Method 2: Try tailscale command
+        tailscale_ip = self._get_tailscale_ip_command()
+        if tailscale_ip:
+            return tailscale_ip
+        
+        # Method 3: Check for tailscale0 interface manually
+        tailscale_ip = self._get_tailscale_ip_manual()
+        if tailscale_ip:
+            return tailscale_ip
+        
+        self.logger.info("No Tailscale IP detected")
+        return None
+    
+    def _get_tailscale_ip_netifaces(self):
+        """Get Tailscale IP using netifaces library"""
+        try:
+            import netifaces
+            
+            interfaces = netifaces.interfaces()
+            for interface in interfaces:
+                try:
+                    # Check for tailscale interface names
+                    if 'tailscale' in interface.lower() or interface == 'utun10':
+                        addrs = netifaces.ifaddresses(interface)
+                        if netifaces.AF_INET in addrs:
+                            for addr_info in addrs[netifaces.AF_INET]:
+                                ip = addr_info.get('addr')
+                                if ip and ip.startswith('100.'):
+                                    self.logger.info(f"Found Tailscale IP via netifaces: {ip}")
+                                    return ip
+                    
+                    # Also check all interfaces for 100.x.x.x addresses
+                    addrs = netifaces.ifaddresses(interface)
+                    if netifaces.AF_INET in addrs:
+                        for addr_info in addrs[netifaces.AF_INET]:
+                            ip = addr_info.get('addr')
+                            if ip and ip.startswith('100.'):
+                                self.logger.info(f"Found Tailscale IP via netifaces: {ip}")
+                                return ip
+                except (ValueError, KeyError):
+                    continue
+        except ImportError:
+            self.logger.warning("netifaces not available, trying other methods")
+        return None
+    
+    def _get_tailscale_ip_command(self):
+        """Get Tailscale IP using tailscale command"""
+        try:
+            import subprocess
+            result = subprocess.run(['tailscale', 'ip'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                ip = result.stdout.strip()
+                if ip and ip.startswith('100.'):
+                    self.logger.info(f"Found Tailscale IP via command: {ip}")
+                    return ip
+        except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return None
+    
+    def _get_tailscale_ip_manual(self):
+        """Get Tailscale IP by parsing network interfaces manually"""
+        try:
+            import subprocess
+            # Try to get IP from tailscale0 interface
+            result = subprocess.run(['ip', 'addr', 'show', 'tailscale0'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if 'inet ' in line and '100.' in line:
+                        ip = line.split('inet ')[1].split('/')[0]
+                        self.logger.info(f"Found Tailscale IP via manual method: {ip}")
+                        return ip
+        except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        return None
 
     def _init_led(self):
         # NeoPixel LED RING with 12 pixels MUST use board.D10

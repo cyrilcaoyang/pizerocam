@@ -9,6 +9,7 @@ A Python package for remote camera control and pH analysis using Raspberry Pi Ze
 - Modular client/server architecture
 - Easy installation with optional dependencies
 - CLI tools for both client and server
+- **Tailscale integration** for secure remote access
 
 ## Architecture
 
@@ -16,6 +17,22 @@ PiZeroCam consists of two main modules:
 
 - **`image_server`**: Runs on Raspberry Pi Zero 2W with camera and motor hardware
 - **`image_req_client`**: Runs on any computer to request photos and analyze them
+
+### Remote Access with Tailscale
+
+PiZeroCam automatically integrates with Tailscale for secure, easy remote access:
+
+**Benefits:**
+- 🔒 **Secure**: End-to-end encrypted connections
+- 🌐 **Remote**: Access your Pi from anywhere in the world
+- 🚀 **Easy**: No port forwarding or firewall configuration needed
+- 📱 **Cross-platform**: Connect from any device (laptop, phone, tablet)
+- 🔗 **Persistent**: Stable connection even when Pi changes networks
+
+**How it works:**
+1. Server automatically detects Tailscale IP (100.x.x.x range)
+2. Clients connect using the Tailscale IP instead of local network IP
+3. Access your Pi lab equipment from anywhere securely
 
 ## Installation
 
@@ -50,6 +67,28 @@ pip install ".[server]"
 ```
 
 **Note:** Use `--system-site-packages` to access system-level packages like `picamera2`.
+
+#### Tailscale Integration
+
+The server automatically detects and uses Tailscale IP addresses when available:
+
+```bash
+# Install Tailscale (if not already installed)
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# Connect to your Tailscale network
+sudo tailscale up
+
+# Start the server - it will automatically use Tailscale IP
+pizerocam-server
+```
+
+**Manual IP Override:**
+```bash
+# Force specific IP address
+export PIZEROCAM_SERVER_IP="100.64.1.100"
+pizerocam-server
+```
 
 ### Developer Installation
 
@@ -347,6 +386,29 @@ server = ImageServer(init_camera=True, init_motor=False)
 - GPIO permissions: Add user to `gpio` group
 - NeoPixel wiring and power supply
 - Board pin configuration
+
+#### Tailscale IP Detection Issues
+**Problem:** Server not detecting Tailscale IP
+
+**Solutions:**
+1. **Check Tailscale status:**
+   ```bash
+   tailscale status
+   tailscale ip
+   ```
+
+2. **Manual IP override:**
+   ```bash
+   export PIZEROCAM_SERVER_IP="100.x.x.x"  # Your Tailscale IP
+   pizerocam-server
+   ```
+
+3. **Python API override:**
+   ```python
+   import os
+   os.environ['PIZEROCAM_SERVER_IP'] = '100.x.x.x'
+   server = ImageServer()
+   ```
 
 #### Full Hardware Not Available
 **For testing/development without hardware:**

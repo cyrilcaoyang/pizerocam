@@ -14,17 +14,18 @@ class ImageServer:
     - Getting the server's IP address
     """
     
-    def __init__(self, host="0.0.0.0", port=2222):
+    def __init__(self, host="0.0.0.0", port=2222, init_camera=True):
         """
         Initialize the ImageServer.
         
         Args:
             host (str): Host address to bind to
             port (int): Port to listen on
+            init_camera (bool): Whether to initialize the camera hardware
         """
         self.host = host
         self.port = port
-        self.server = PHTestServer(host, port)
+        self.server = PHTestServer(host, port, init_camera)
         self.running = False
         self.server_socket = None
         self.server_thread = None

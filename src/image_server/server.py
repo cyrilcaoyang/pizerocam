@@ -34,13 +34,13 @@ class CameraServer:
     This is a class of a server with ability to take photos on demand with user-defined
     LED backlight. The client can request photos and changing the LED backlight.
     """
-    def __init__(self, host="0,0,0,0", port=server_port):
+    def __init__(self, host="0,0,0,0", port=server_port, init_camera=True):
         self.host = host
         self.port = port
         self.logger = self._setup_logger()
         self.server_ip = self._get_server_ip()
         self.led = self._init_led()
-        self.cam = self._init_cam()
+        self.cam = self._init_cam() if init_camera else None
         self.color = (200, 200, 200)    # Default LED configuration
         self.camera_lock = threading.Lock()     # Thread lock
 
@@ -81,19 +81,51 @@ class CameraServer:
     def _init_cam(self):
         self.logger.info("Initializing camera session")
         cam = Picamera2(0)
-        config = cam.create_still_configuration()
-        cam.configure(config)
-        if 'AfMode' in cam.camera_controls:
-            cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
-        cam.start()
-        self.logger.info(f"Camera initiated.")
-        return cam
+        
+        # Try different resolutions in order of preference
+        resolutions = [
+            (1920, 1080),  # Full HD
+            (1280, 720),   # HD  
+            (640, 480),    # VGA
+        ]
+        
+        for width, height in resolutions:
+            try:
+                self.logger.info(f"Attempting camera configuration with {width}x{height}")
+                config = cam.create_still_configuration(main={"size": (width, height)})
+                cam.configure(config)
+                
+                if 'AfMode' in cam.camera_controls:
+                    cam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+                    
+                cam.start()
+                self.logger.info(f"Camera initiated successfully with {width}x{height} resolution.")
+                return cam
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to configure camera with {width}x{height}: {e}")
+                continue
+        
+        # If all resolutions fail, try with default configuration
+        try:
+            self.logger.info("Attempting default camera configuration")
+            config = cam.create_still_configuration()
+            # Try to modify the config to use smaller size if possible
+            if hasattr(config, 'main') and hasattr(config.main, 'size'):
+                config.main.size = (640, 480)
+            cam.configure(config)
+            cam.start()
+            self.logger.info("Camera initiated with default/fallback configuration.")
+            return cam
+        except Exception as e:
+            self.logger.error(f"Failed to initialize camera with any configuration: {e}")
+            raise
 
     def __del__(self):
         """
         Making sure the instance is destroyed when camera is closed
         """
-        if hasattr(self, 'cam'):
+        if hasattr(self, 'cam') and self.cam is not None:
             self.cam.stop()
             self.cam.close()
             self.logger.info(f"Camera closed.")
@@ -101,6 +133,10 @@ class CameraServer:
     def take_photo(self):
         # This function will instantiate a new camera instance every time
         try:
+            if self.cam is None:
+                self.logger.error("Camera not initialized - cannot take photo")
+                return None
+                
             with self.camera_lock:
                 # Create output directory
                 photo_dir = os.path.join(os.getcwd(), "photos")

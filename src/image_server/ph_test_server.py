@@ -15,9 +15,9 @@ with open(script_dir / 'server_settings.yaml', 'r') as file:
 
 
 class PHTestServer(CameraServer):
-    def __init__(self, host="0.0.0.0", port=server_port, init_camera=True):
+    def __init__(self, host="0.0.0.0", port=server_port, init_camera=True, init_motor=True):
         super().__init__(host, port, init_camera)
-        self.motor_driver = self._init_motor_driver()
+        self.motor_driver = self._init_motor_driver() if init_motor else None
         self.PWMA = 0
         self.AIN1 = 1
         self.AIN2 = 2
@@ -25,16 +25,26 @@ class PHTestServer(CameraServer):
     def _init_motor_driver(self):
         # Initialize PCA9685 and motor
         # Assumes default I2C address 0x40
-        pwm = PCA9685(0x40, debug=False)
-        pwm.setPWMFreq(50)
-        self.logger.info("Motor driver initialized.")
-        return pwm
+        try:
+            self.logger.info("Attempting to initialize motor driver...")
+            pwm = PCA9685(0x40, debug=False)
+            pwm.setPWMFreq(50)
+            self.logger.info("Motor driver initialized successfully.")
+            return pwm
+        except Exception as e:
+            self.logger.error(f"Failed to initialize motor driver: {e}")
+            self.logger.warning("Motor functionality will be disabled")
+            raise
 
     def run_motor(self):
         """
         Run motor A for 1 seconds at 50% speed
         """
         try:
+            if self.motor_driver is None:
+                self.logger.error("Motor driver not initialized - cannot run motor")
+                return False
+                
             self.logger.info("Running motor...")
             # Set speed to 50%
             self.motor_driver.setDutycycle(self.PWMA, 50)
@@ -47,8 +57,10 @@ class PHTestServer(CameraServer):
             # Stop motor
             self.motor_driver.setDutycycle(self.PWMA, 0)
             self.logger.info("Motor run complete.")
+            return True
         except Exception as e:
             self.logger.error(f"Motor run failed: {e}")
+            return False
 
     def handle_client(self, conn):
         """Handle client connection in a thread-safe manner"""
@@ -87,8 +99,10 @@ class PHTestServer(CameraServer):
                         self.logger.error(f"Invalid RGB values: {rgb_data}.")
 
                 elif msg == "RUN_MOTOR":
-                    self.run_motor()
-                    conn.sendall("MOTOR_RUN_COMPLETE".encode('utf-8'))
+                    if self.run_motor():
+                        conn.sendall("MOTOR_RUN_COMPLETE".encode('utf-8'))
+                    else:
+                        conn.sendall("MOTOR_RUN_FAILED".encode('utf-8'))
 
         except Exception as e:
             self.logger.error(f"Handle client error: {e}.")

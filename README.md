@@ -119,9 +119,15 @@ with ImageReqClient() as client:
 ```python
 from image_server import ImageServer
 
-# Basic start/stop
+# Basic start/stop with all hardware
 server = ImageServer(host="0.0.0.0", port=2222)
 print(f"Server IP: {server.get_ip_address()}")
+
+# Hardware configuration options
+server_no_hw = ImageServer(init_camera=False, init_motor=False)  # No hardware
+server_cam_only = ImageServer(init_camera=True, init_motor=False)  # Camera only
+server_motor_only = ImageServer(init_camera=False, init_motor=True)  # Motor only
+server_full = ImageServer(init_camera=True, init_motor=True)  # All hardware
 
 # Start in background (non-blocking)
 if server.start(background=True):
@@ -138,7 +144,7 @@ if server.start(background=True):
 server.start(background=False)  # This will block until stopped
 
 # Context manager (automatic cleanup)
-with ImageServer() as server:
+with ImageServer(init_camera=False, init_motor=False) as server:
     print(f"Server running at {server.get_ip_address()}")
     # Server runs until context exits
 
@@ -309,6 +315,64 @@ server2.stop()
 - **Context Management**: Automatic resource cleanup
 - **Signal Handling**: Responds to system signals (Ctrl+C, SIGTERM)
 
+## Troubleshooting
+
+### Common Hardware Issues
+
+#### Camera Memory Allocation Error
+**Error:** `OSError: [Errno 12] Cannot allocate memory`
+
+**Solution:** The server automatically tries different camera resolutions. If it still fails:
+```python
+# Use server without camera
+server = ImageServer(init_camera=False, init_motor=True)
+```
+
+#### Motor I2C Communication Error  
+**Error:** `OSError: [Errno 5] Input/output error` (PCA9685)
+
+**Solutions:**
+1. Check I2C is enabled: `sudo raspi-config` → Interface Options → I2C
+2. Verify PCA9685 connection and address
+3. Use server without motor:
+```python
+# Use server without motor
+server = ImageServer(init_camera=True, init_motor=False)
+```
+
+#### LED/NeoPixel Issues
+**Error:** LED initialization fails
+
+**Check:**
+- GPIO permissions: Add user to `gpio` group
+- NeoPixel wiring and power supply
+- Board pin configuration
+
+#### Full Hardware Not Available
+**For testing/development without hardware:**
+```python
+# Minimal server for testing
+server = ImageServer(init_camera=False, init_motor=False)
+```
+
+### Hardware Configuration Examples
+
+```python
+from image_server import ImageServer
+
+# Development/Testing (no hardware required)
+server = ImageServer(init_camera=False, init_motor=False)
+
+# Photography only (camera + LED)
+server = ImageServer(init_camera=True, init_motor=False)
+
+# Motor testing only 
+server = ImageServer(init_camera=False, init_motor=True)
+
+# Full pH testing setup (all hardware)
+server = ImageServer(init_camera=True, init_motor=True)
+```
+
 ## Hardware Setup (Raspberry Pi Server)
 
 ### Required Components
@@ -395,6 +459,15 @@ The analysis region is currently configured for coordinates (750, 1100, 150, 300
 - `run_motor()` - Run motor
 
 ### ImageServer Methods
+
+**Constructor:**
+- `ImageServer(host="0.0.0.0", port=2222, init_camera=True, init_motor=True)`
+  - `host`: Host address to bind to
+  - `port`: Port to listen on
+  - `init_camera`: Whether to initialize camera hardware
+  - `init_motor`: Whether to initialize motor hardware
+
+**Methods:**
 - `start(background=True)` - Start server (returns bool)
   - `background=True`: Non-blocking, runs in background thread
   - `background=False`: Blocking, runs in current thread

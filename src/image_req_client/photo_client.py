@@ -55,16 +55,17 @@ class PhotoClient:
         :param photo_dir: the directory to save photos
         :return: absolute image path
         """
-        # Create the photos directory if it does not exist already
-        output_dir = "photos-2025-03-26-pH"
-        os.makedirs(output_dir, exist_ok=True)
+        # Create the photos directory in ~/Pictures/pH_photos/
+        home_dir = Path.home()
+        output_dir = home_dir / "Pictures" / "pH_photos"
+        output_dir.mkdir(parents=True, exist_ok=True)
         
         # Receive the image name and echo back to confirm
         img_name = receive_file_name(sock, self.logger)
         self.logger.info(f"Server sent file name {img_name}.")
         send_file_name(sock, img_name, self.logger)
         self.logger.info("Echoed the file name back to server.")
-        img_path = os.path.join(output_dir, img_name)
+        img_path = output_dir / img_name
 
         # Receive ASCII-based file size  and echo back to confirm
         file_size = receive_file_size(sock, self.logger)
@@ -77,7 +78,7 @@ class PhotoClient:
         with open(img_path, "wb") as f:
             f.write(received_data)
         self.logger.info(f"File {img_name} saved to: {output_dir}")
-        return True, img_path
+        return True, str(img_path)
 
     def interactive_client_session(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

@@ -5,12 +5,11 @@ from pathlib import Path
 from google.cloud import vision
 import itertools
 import argparse
+from pprint import pprint
 
 # --- CONFIG ---
 # Path to the image to analyze
 IMAGE_PATH = "photos-2025-03-26-pH/capture_20250714-182920_100100100.jpg"  # Change to your image path
-OUTPUT_DIR = "photos-2025-03-26-pH"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- STEP 1: OCR Detection and Text Box Visualization ---
 
@@ -44,28 +43,65 @@ def draw_text_boxes(image, detections, out_path):
     cv2.imwrite(out_path, img)
     print(f"Saved labeled text box image to {out_path}")
 
-def cluster_rows(detections, row_gap_thresh=40):
-    """Cluster text boxes into rows based on y-coordinate proximity."""
-    # Use the vertical center of each box
+def cluster_rows(detections, row_gap_thresh=None):
+    """Cluster text boxes into rows based on y-coordinate proximity using text height as tolerance."""
+    if not detections:
+        return []
+    
+    # Calculate average text height to use as clustering tolerance
+    text_heights = []
     for det in detections:
         bbox = det['bbox']
+        text_height = max([p[1] for p in bbox]) - min([p[1] for p in bbox])
+        text_heights.append(text_height)
+        # Also calculate centers for later use
         det['y_center'] = int(np.mean([p[1] for p in bbox]))
         det['x_center'] = int(np.mean([p[0] for p in bbox]))
+    
+    # Use average text height as tolerance, with fallback
+    if row_gap_thresh is None:
+        avg_text_height = np.mean(text_heights) if text_heights else 40
+        row_gap_thresh = int(avg_text_height)
+        print(f"Using text-based row clustering tolerance: {row_gap_thresh} pixels (avg text height: {avg_text_height:.1f})")
+    
     # Sort by y_center
     detections_sorted = sorted(detections, key=lambda d: d['y_center'])
+    
+    # Group into rows using the text height-based tolerance
     rows = []
     for k, group in itertools.groupby(detections_sorted, key=lambda d: d['y_center']//row_gap_thresh):
         rows.append(list(group))
+    
+    print(f"Clustered {len(detections)} detections into {len(rows)} rows")
     return rows
 
 def define_color_boxes(rows, delta_y_frac=0.4, width_frac=0.5):
     """For each number, define a color box below it."""
+    # Calculate text box heights to ensure minimum color box height
+    all_detections = [det for row in rows for det in row]
+    text_heights = []
+    for det in all_detections:
+        bbox = det['bbox']
+        text_height = max([p[1] for p in bbox]) - min([p[1] for p in bbox])
+        text_heights.append(text_height)
+    
+    if text_heights:
+        avg_text_height = np.mean(text_heights)
+        min_color_box_height = int(avg_text_height)  # Minimum height = text height
+        print(f"Average text height: {avg_text_height:.1f} pixels, minimum color box height: {min_color_box_height}")
+    else:
+        min_color_box_height = 20  # fallback minimum
+        avg_text_height = 20
+    
     if len(rows) < 2:
-        print("Warning: Less than 2 rows detected. Color box height may be inaccurate.")
-        row_delta = 40  # fallback
+        print("Warning: Less than 2 rows detected. Using text box height to estimate color box size.")
+        # Use text height as a reasonable scale reference
+        row_delta = avg_text_height * 3  # Color box should be ~3x text height below
+        print(f"Estimated row_delta from text height: {row_delta:.1f} pixels")
     else:
         # Use mean y distance between row centers
         row_delta = abs(np.mean([det['y_center'] for det in rows[1]]) - np.mean([det['y_center'] for det in rows[0]]))
+    
     color_boxes = []
     for row in rows:
         # Sort by x
@@ -80,12 +116,26 @@ def define_color_boxes(rows, delta_y_frac=0.4, width_frac=0.5):
             bbox = det['bbox']
             x_center = det['x_center']
             y_max = max([p[1] for p in bbox])
-            width = int(avg_x_dist * width_frac)
-            height = int(row_delta * delta_y_frac)
+            
+            # Calculate this specific text box height and width
+            text_height = max([p[1] for p in bbox]) - min([p[1] for p in bbox])
+            text_width = max([p[0] for p in bbox]) - min([p[0] for p in bbox])
+            
+            # Calculate width ensuring it's at least as wide as the text
+            calculated_width = int(avg_x_dist * width_frac)
+            width = max(calculated_width, text_width, 100)  # Minimum 100 pixels wide
+            
+            calculated_height = int(row_delta * delta_y_frac)
+            
+            # Ensure height is at least the height of this number's bounding box
+            height = max(calculated_height, text_height, min_color_box_height)
+            
             x1 = int(x_center - width//2)
             x2 = int(x_center + width//2)
-            y1 = int(y_max + row_delta * 0.4 - height//2)
+            # Position color box below text with some spacing
+            y1 = int(y_max + row_delta * 0.2)  # Start closer to text
             y2 = int(y1 + height)
+            
             color_boxes.append({
                 'ph_text': det['text'],
                 'rect': (x1, y1, x2, y2),
@@ -104,7 +154,7 @@ def draw_color_boxes(image, detections, color_boxes, out_path=None):
     for box in color_boxes:
         x1, y1, x2, y2 = box['rect']
         cv2.rectangle(img, (x1, y1), (x2, y2), (255,255,255), 10)  # White outline
-        cv2.putText(img, f"pH {box['ph_text']}", (x1, y1-20), cv2.FONT_HERSHEY_SIMPLEX, 3, (255,255,255), 10)  # White label, size 3
+        cv2.putText(img, f"pH {box['ph_text']}", (x1, y2+60), cv2.FONT_HERSHEY_SIMPLEX, 3, (255,255,255), 10)  # White label, size 3
     if out_path:
         cv2.imwrite(out_path, img)
         print(f"Saved labeled color box image to {out_path}")
@@ -225,6 +275,14 @@ def find_closest_detected_ph(target_bgr, avg_colors):
     return best_ph, min_dist
 
 def ph_from_image(image_path):
+    # Setup output directory in ~/Pictures/pH_photos/
+    home_dir = Path.home()
+    output_dir = home_dir / "Pictures" / "pH_photos"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Extract base filename without extension from input image
+    input_filename = Path(image_path).stem  # e.g., "capture_20250715-151115_200200200"
+    
     image, detections = detect_text_boxes(image_path)
     # Compute average width of single-digit boxes
     single_digit_widths = [
@@ -237,21 +295,23 @@ def ph_from_image(image_path):
     for det in detections:
         split_detections.extend(split_multi_digit_detection(det, avg_digit_width))
     detections = split_detections
-    out_path1 = os.path.join(OUTPUT_DIR, "step1_text_boxes.png")
-    draw_text_boxes(image, detections, out_path1)
+    out_path1 = output_dir / f"{input_filename}_step1_text_boxes.png"
+    draw_text_boxes(image, detections, str(out_path1))
 
     # --- STEP 2 ---
     rows = cluster_rows(detections)
+    
     color_boxes = define_color_boxes(rows)
-    out_path2 = os.path.join(OUTPUT_DIR, "step2_color_boxes.png")
-    draw_color_boxes(image, detections, color_boxes, out_path2)
+    out_path2 = output_dir / f"{input_filename}_step2_color_boxes.png"
+    draw_color_boxes(image, detections, color_boxes, str(out_path2))
 
     # --- STEP 3: Get average colors ---
     avg_colors = get_average_colors(image, color_boxes)
     # --- STEP 4: Demo for a given box ---
     avg_bgr, box_coords, roi = get_average_color_of_box(image, 750, 1100, 150, 300) # this is the box of pH strip
     closest_ph, dist = find_closest_detected_ph(avg_bgr, avg_colors)
-    highlight_and_label_box(image, box_coords, closest_ph, os.path.join(OUTPUT_DIR, "step3_highlighted_box.png"), color_boxes=color_boxes, detections=detections)
+    out_path3 = output_dir / f"{input_filename}_step3_highlighted_box.png"
+    highlight_and_label_box(image, box_coords, closest_ph, str(out_path3), color_boxes=color_boxes, detections=detections)
     if closest_ph is not None:
         return closest_ph
     else:

@@ -133,16 +133,17 @@ class ImageReqClient:
             tuple: (success: bool, image_path: str)
         """
         try:
-            # Create the photos directory if it does not exist already
-            output_dir = "photos-2025-03-26-pH"
-            os.makedirs(output_dir, exist_ok=True)
+            # Create the photos directory in ~/Pictures/pH_photos/
+            home_dir = Path.home()
+            output_dir = home_dir / "Pictures" / "pH_photos"
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             # Receive the image name and echo back to confirm
             img_name = receive_file_name(self.socket, self.logger)
             self.logger.info(f"Server sent file name {img_name}.")
             send_file_name(self.socket, img_name, self.logger)
             self.logger.info("Echoed the file name back to server.")
-            img_path = os.path.join(output_dir, img_name)
+            img_path = output_dir / img_name
 
             # Receive ASCII-based file size and echo back to confirm
             file_size = receive_file_size(self.socket, self.logger)
@@ -155,7 +156,7 @@ class ImageReqClient:
             with open(img_path, "wb") as f:
                 f.write(received_data)
             self.logger.info(f"File {img_name} saved to: {output_dir}")
-            return True, img_path
+            return True, str(img_path)
             
         except Exception as e:
             self.logger.error(f"Error receiving photo: {e}")

@@ -15,8 +15,8 @@ with open(script_dir / 'server_settings.yaml', 'r') as file:
 
 
 class PHTestServer(CameraServer):
-    def __init__(self, host="0.0.0.0", port=server_port, init_camera=True, init_motor=True):
-        super().__init__(host, port, init_camera)
+    def __init__(self, host="0.0.0.0", port=server_port, init_camera=True, init_motor=True, resolution=None):
+        super().__init__(host, port, init_camera, resolution)
         self.motor_driver = self._init_motor_driver() if init_motor else None
         self.PWMA = 0
         self.AIN1 = 1

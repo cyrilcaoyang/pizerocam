@@ -25,6 +25,12 @@ Examples:
   # Start server with automatic Tailscale detection
   pizerocam-server
   
+  # Start server with maximum resolution (4608x2592)
+  pizerocam-server --resolution max
+  
+  # Start server with Full HD resolution
+  pizerocam-server --resolution fhd
+  
   # Start server with motor disabled (if PCA9685 not available)
   pizerocam-server --no-motor
   
@@ -73,6 +79,12 @@ Examples:
         help="Disable motor initialization"
     )
     
+    parser.add_argument(
+        "--resolution",
+        choices=["max", "4k", "fhd", "hd", "vga"],
+        help="Camera resolution (max=4608x2592, 4k=3840x2160, fhd=1920x1080, hd=1280x720, vga=640x480)"
+    )
+    
     args = parser.parse_args()
     
     # Set up signal handlers for graceful shutdown
@@ -86,32 +98,35 @@ Examples:
     # Create and start server with fallback for hardware issues
     if init_camera and init_motor:
         try:
-            server = ImageServer(host=args.host, port=args.port, init_camera=True, init_motor=True)
+            server = ImageServer(host=args.host, port=args.port, init_camera=True, init_motor=True, resolution=args.resolution)
             print("✓ Server created with full hardware support")
         except Exception as e:
             print(f"⚠ Full hardware initialization failed: {e}")
             print("Trying with motor disabled...")
             try:
-                server = ImageServer(host=args.host, port=args.port, init_camera=True, init_motor=False)
+                server = ImageServer(host=args.host, port=args.port, init_camera=True, init_motor=False, resolution=args.resolution)
                 print("✓ Server created with camera only (motor disabled)")
             except Exception as e2:
                 print(f"⚠ Camera initialization failed: {e2}")
                 print("Trying with minimal configuration...")
-                server = ImageServer(host=args.host, port=args.port, init_camera=False, init_motor=False)
+                server = ImageServer(host=args.host, port=args.port, init_camera=False, init_motor=False, resolution=args.resolution)
                 print("✓ Server created with minimal configuration (no hardware)")
     else:
         # User explicitly disabled some hardware
         try:
-            server = ImageServer(host=args.host, port=args.port, init_camera=init_camera, init_motor=init_motor)
+            server = ImageServer(host=args.host, port=args.port, init_camera=init_camera, init_motor=init_motor, resolution=args.resolution)
             hw_status = []
-            if init_camera: hw_status.append("camera")
+            if init_camera: 
+                hw_status.append("camera")
+                if args.resolution:
+                    hw_status.append(f"@{args.resolution}")
             if init_motor: hw_status.append("motor") 
             if not hw_status: hw_status.append("no hardware")
             print(f"✓ Server created with: {', '.join(hw_status)}")
         except Exception as e:
             print(f"⚠ Server initialization failed: {e}")
             print("Falling back to minimal configuration...")
-            server = ImageServer(host=args.host, port=args.port, init_camera=False, init_motor=False)
+            server = ImageServer(host=args.host, port=args.port, init_camera=False, init_motor=False, resolution=args.resolution)
             print("✓ Server created with minimal configuration (no hardware)")
     
     try:

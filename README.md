@@ -104,7 +104,17 @@ pip install .[client,server]
 
 **Start the server (on Raspberry Pi):**
 ```bash
+# Default (tries 4608x2592 first, falls back automatically)
 pizerocam-server
+
+# Force maximum resolution
+pizerocam-server --resolution max
+
+# Use Full HD for faster processing
+pizerocam-server --resolution fhd
+
+# Disable motor if PCA9685 not available
+pizerocam-server --no-motor
 ```
 
 **Connect from client (on your computer):**
@@ -167,6 +177,11 @@ server_no_hw = ImageServer(init_camera=False, init_motor=False)  # No hardware
 server_cam_only = ImageServer(init_camera=True, init_motor=False)  # Camera only
 server_motor_only = ImageServer(init_camera=False, init_motor=True)  # Motor only
 server_full = ImageServer(init_camera=True, init_motor=True)  # All hardware
+
+# Camera resolution options
+server_max_res = ImageServer(resolution="max")  # Maximum 4608x2592
+server_4k = ImageServer(resolution="4k")        # 4K 3840x2160
+server_fhd = ImageServer(resolution="fhd")      # Full HD 1920x1080
 
 # Start in background (non-blocking)
 if server.start(background=True):
@@ -523,11 +538,12 @@ The analysis region is currently configured for coordinates (750, 1100, 150, 300
 ### ImageServer Methods
 
 **Constructor:**
-- `ImageServer(host="0.0.0.0", port=2222, init_camera=True, init_motor=True)`
+- `ImageServer(host="0.0.0.0", port=2222, init_camera=True, init_motor=True, resolution=None)`
   - `host`: Host address to bind to
   - `port`: Port to listen on
   - `init_camera`: Whether to initialize camera hardware
   - `init_motor`: Whether to initialize motor hardware
+  - `resolution`: Camera resolution preference ("max", "4k", "fhd", "hd", "vga")
 
 **Methods:**
 - `start(background=True)` - Start server (returns bool)
@@ -554,9 +570,13 @@ The analysis region is currently configured for coordinates (750, 1100, 150, 300
 
 **pizerocam-server:**
 ```
---host HOST      Bind interface (default: 0.0.0.0)
---port PORT      Listen port (default: 2222)
---verbose        Enable verbose logging
+--host HOST         Bind interface (default: 0.0.0.0)
+--port PORT         Listen port (default: 2222)
+--verbose           Enable verbose logging
+--no-camera         Disable camera initialization
+--no-motor          Disable motor initialization
+--resolution RES    Camera resolution (max=4608x2592, 4k=3840x2160, 
+                    fhd=1920x1080, hd=1280x720, vga=640x480)
 ```
 
 ## Development

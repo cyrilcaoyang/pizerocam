@@ -34,12 +34,13 @@ class CameraServer:
     This is a class of a server with ability to take photos on demand with user-defined
     LED backlight. The client can request photos and changing the LED backlight.
     """
-    def __init__(self, host="0,0,0,0", port=server_port, init_camera=True):
+    def __init__(self, host="0,0,0,0", port=server_port, init_camera=True, resolution=None):
         self.host = host
         self.port = port
         self.logger = self._setup_logger()
         self.server_ip = self._get_server_ip()
         self.led = self._init_led()
+        self.resolution_preference = resolution
         self.cam = self._init_cam() if init_camera else None
         self.color = (200, 200, 200)    # Default LED configuration
         self.camera_lock = threading.Lock()     # Thread lock
@@ -185,12 +186,38 @@ class CameraServer:
         self.logger.info("Initializing camera session")
         cam = Picamera2(0)
         
-        # Try different resolutions in order of preference
-        resolutions = [
-            (1920, 1080),  # Full HD
-            (1280, 720),   # HD  
-            (640, 480),    # VGA
-        ]
+        # Define resolution mappings
+        resolution_map = {
+            "max": (4608, 2592),   # Maximum sensor resolution
+            "4k": (3840, 2160),    # 4K resolution
+            "fhd": (1920, 1080),   # Full HD
+            "hd": (1280, 720),     # HD
+            "vga": (640, 480),     # VGA
+        }
+        
+        # Get resolutions in order of preference
+        if self.resolution_preference and self.resolution_preference in resolution_map:
+            # User specified a resolution - try that first
+            preferred_res = resolution_map[self.resolution_preference]
+            resolutions = [preferred_res]
+            # Add fallbacks (smaller resolutions)
+            fallback_resolutions = [
+                (4608, 2592),  # Maximum sensor resolution
+                (1920, 1080),  # Full HD
+                (1280, 720),   # HD  
+                (640, 480),    # VGA
+            ]
+            for res in fallback_resolutions:
+                if res != preferred_res and res not in resolutions:
+                    resolutions.append(res)
+        else:
+            # Default resolution order
+            resolutions = [
+                (4608, 2592),  # Maximum sensor resolution
+                (1920, 1080),  # Full HD
+                (1280, 720),   # HD  
+                (640, 480),    # VGA
+            ]
         
         for width, height in resolutions:
             try:

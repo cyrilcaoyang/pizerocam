@@ -1,8 +1,8 @@
 import yaml
 from time import sleep
 from pathlib import Path
-from server import CameraServer
-from PCA9685 import PCA9685
+from .server import CameraServer
+from .PCA9685 import PCA9685
 
 # Get the directory where this script is located
 script_dir = Path(__file__).resolve().parent

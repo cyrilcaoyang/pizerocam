@@ -109,6 +109,11 @@ def define_color_boxes(rows, delta_y_frac=0.4, width_frac=0.5):
     else:
         # Use mean y distance between row centers
         row_delta = abs(np.mean([det['y_center'] for det in rows[1]]) - np.mean([det['y_center'] for det in rows[0]]))
+        print(f"Calculated row_delta from row spacing: {row_delta:.1f} pixels")
+    
+    # Add minimum spacing to ensure color boxes don't overlap with text
+    min_spacing = avg_text_height * 0.5  # At least half text height spacing
+    print(f"Using minimum spacing: {min_spacing:.1f} pixels")
     
     color_boxes = []
     for row in rows:
@@ -140,9 +145,13 @@ def define_color_boxes(rows, delta_y_frac=0.4, width_frac=0.5):
             
             x1 = int(x_center - width//2)
             x2 = int(x_center + width//2)
-            # Position color box below text with some spacing
-            y1 = int(y_max + row_delta * 0.2)  # Start closer to text
+            
+            # FIXED: More robust positioning - ensure adequate spacing below text
+            spacing = max(min_spacing, row_delta * 0.2)  # Use larger of minimum spacing or 30% of row_delta
+            y1 = int(y_max + spacing)
             y2 = int(y1 + height)
+            
+            print(f"pH {det['text']}: text_height={text_height}, spacing={spacing:.1f}, box=({x1},{y1},{x2},{y2})")
             
             color_boxes.append({
                 'ph_text': det['text'],

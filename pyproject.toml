@@ -40,17 +40,17 @@ server = [
     "RPi.GPIO"
 ]
 client = [
-    "opencv-python>=4.10.0",
-    "numpy>=2.2.2",
-    "pillow>=11.1.0",
+    "opencv-python>=4.5.0,<5.0.0",
+    "numpy>=1.21.0,<2.0.0",
+    "pillow>=8.0.0",
     "matplotlib",
     "google-cloud-vision",
     "python-dotenv"
 ]
 client-tesseract = [
-    "opencv-python>=4.10.0",
-    "numpy==2.2.2",
-    "pillow==11.1.0",
+    "opencv-python>=4.5.0,<5.0.0",
+    "numpy>=1.21.0,<2.0.0",
+    "pillow>=8.0.0",
     "pytesseract==0.3.13",
     "matplotlib",
     "python-dotenv"

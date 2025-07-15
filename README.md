@@ -38,6 +38,8 @@ PiZeroCam automatically integrates with Tailscale for secure, easy remote access
 
 ### Client Installation (on your computer)
 
+Make sure you have set up the Goolge Cloud API: https://cloud.google.com/sdk/docs/install-sdk
+
 For basic photo requesting and pH analysis:
 
 ```bash

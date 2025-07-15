@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pizerocam"
-version = "0.1.0"
+version = "0.2.0"
 description='Python utils package for self-driving labs'
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -34,7 +34,7 @@ authors = [
 [project.optional-dependencies]
 server = [
     "picamera2",
-    "neopixel",
+    "adafruit-circuitpython-neopixel",
     "RPi.GPIO"
 ]
 client = [

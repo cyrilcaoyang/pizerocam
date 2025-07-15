@@ -40,7 +40,13 @@ git clone https://github.com/cyrilcaoyang/pizerocam.git
 cd pizerocam
 python3 -m venv venv --system-site-packages
 source venv/bin/activate
-pip install .[server]
+
+# Install system dependencies first (if needed)
+sudo apt update
+sudo apt install python3-picamera2
+
+# Install the server package
+pip install ".[server]"
 ```
 
 **Note:** Use `--system-site-packages` to access system-level packages like `picamera2`.
@@ -113,15 +119,33 @@ with ImageReqClient() as client:
 ```python
 from image_server import ImageServer
 
-# Create and start server
+# Basic start/stop
 server = ImageServer(host="0.0.0.0", port=2222)
 print(f"Server IP: {server.get_ip_address()}")
-server.start()  # Runs in background by default
 
-# Or use as context manager (blocking)
+# Start in background (non-blocking)
+if server.start(background=True):
+    print("Server started successfully")
+    
+    # Do other work while server runs...
+    input("Press Enter to stop server...")
+    
+    # Stop server
+    if server.stop():
+        print("Server stopped successfully")
+
+# Start in foreground (blocking)
+server.start(background=False)  # This will block until stopped
+
+# Context manager (automatic cleanup)
 with ImageServer() as server:
     print(f"Server running at {server.get_ip_address()}")
     # Server runs until context exits
+
+# Status checking
+if not server.is_running():
+    server.start()
+print(f"Server status: {'Running' if server.is_running() else 'Stopped'}")
 ```
 
 **pH Analysis Standalone:**
@@ -133,6 +157,157 @@ from image_req_client import ph_from_image
 ph_value = ph_from_image("path/to/image.jpg")
 print(f"pH: {ph_value}")  # Returns pH value or "NULL"
 ```
+
+## Server Control and Management
+
+### Starting and Stopping the Server
+
+The ImageServer provides comprehensive start/stop functionality with multiple usage patterns:
+
+#### 1. Command Line Interface
+
+**Basic server start:**
+```bash
+# Start with default settings (host: 0.0.0.0, port: 2222)
+pizerocam-server
+
+# Custom host and port
+pizerocam-server --host 192.168.1.100 --port 3333
+
+# Enable verbose logging
+pizerocam-server --verbose
+```
+
+**Stopping the server:**
+- Press `Ctrl+C` for graceful shutdown
+- The CLI handles signal management automatically
+
+#### 2. Python API Control
+
+**Background Mode (Non-blocking):**
+```python
+from image_server import ImageServer
+
+server = ImageServer()
+
+# Start server in background thread
+if server.start(background=True):
+    print("Server started successfully")
+    print(f"Server IP: {server.get_ip_address()}")
+    
+    # Your application continues running here
+    # Server handles requests in the background
+    
+    # Stop when needed
+    server.stop()
+```
+
+**Foreground Mode (Blocking):**
+```python
+from image_server import ImageServer
+
+server = ImageServer()
+
+try:
+    # This will block until server is stopped
+    server.start(background=False)
+except KeyboardInterrupt:
+    print("Server interrupted")
+finally:
+    server.stop()
+```
+
+**Context Manager (Automatic Cleanup):**
+```python
+from image_server import ImageServer
+
+# Server automatically stops when exiting context
+with ImageServer(host="0.0.0.0", port=2222) as server:
+    print(f"Server running at {server.get_ip_address()}")
+    input("Press Enter to stop...")
+# Server automatically stopped here
+```
+
+**Status Monitoring:**
+```python
+from image_server import ImageServer
+import time
+
+server = ImageServer()
+
+# Check if server is running
+if not server.is_running():
+    print("Starting server...")
+    server.start()
+
+# Monitor status
+while server.is_running():
+    print(f"Server status: Running on {server.get_ip_address()}")
+    time.sleep(5)
+    
+    # Stop condition (example)
+    if some_stop_condition():
+        server.stop()
+        break
+
+print("Server stopped")
+```
+
+#### 3. Advanced Server Management
+
+**Error Handling:**
+```python
+from image_server import ImageServer
+
+server = ImageServer()
+
+try:
+    if server.start():
+        print("Server started successfully")
+    else:
+        print("Failed to start server - check logs")
+        
+    # Server operations...
+    
+except Exception as e:
+    print(f"Server error: {e}")
+finally:
+    if server.is_running():
+        if server.stop():
+            print("Server stopped gracefully")
+        else:
+            print("Error stopping server")
+```
+
+**Multiple Server Instances:**
+```python
+from image_server import ImageServer
+
+# Create multiple servers on different ports
+server1 = ImageServer(port=2222)
+server2 = ImageServer(port=2223)
+
+# Start both
+server1.start(background=True)
+server2.start(background=True)
+
+print(f"Server 1: {server1.get_ip_address()}:2222")
+print(f"Server 2: {server2.get_ip_address()}:2223")
+
+# Stop both
+server1.stop()
+server2.stop()
+```
+
+### Server Features
+
+- **Graceful Shutdown**: Proper cleanup of resources and connections
+- **Thread Safety**: Safe concurrent client handling
+- **Error Recovery**: Robust error handling and logging
+- **Status Monitoring**: Real-time server status checking
+- **Flexible Deployment**: Background or foreground operation modes
+- **Context Management**: Automatic resource cleanup
+- **Signal Handling**: Responds to system signals (Ctrl+C, SIGTERM)
 
 ## Hardware Setup (Raspberry Pi Server)
 
@@ -155,7 +330,7 @@ print(f"pH: {ph_value}")  # Returns pH value or "NULL"
 2. **Install system dependencies:**
    ```bash
    sudo apt update
-   sudo apt install python3-picamera2
+   sudo apt install python3-picamera2 portaudio19-dev
    ```
 
 3. **Optional - Install PiSugar:**
@@ -170,7 +345,7 @@ print(f"pH: {ph_value}")  # Returns pH value or "NULL"
    cd pizerocam
    python3 -m venv venv --system-site-packages
    source venv/bin/activate
-   pip install .[server]
+   pip install ".[server]"
    ```
 
 5. **Start the server:**
@@ -220,10 +395,14 @@ The analysis region is currently configured for coordinates (750, 1100, 150, 300
 - `run_motor()` - Run motor
 
 ### ImageServer Methods
-- `start(background=True)` - Start server
-- `stop()` - Stop server
-- `get_ip_address()` - Get server IP
-- `is_running()` - Check if running
+- `start(background=True)` - Start server (returns bool)
+  - `background=True`: Non-blocking, runs in background thread
+  - `background=False`: Blocking, runs in current thread
+- `stop()` - Stop server gracefully (returns bool)
+- `is_running()` - Check if server is currently running (returns bool)
+- `get_ip_address()` - Get server's IP address (returns str)
+- `get_logger()` - Get server's logger instance
+- Context manager support (`__enter__`/`__exit__`)
 
 ### CLI Options
 

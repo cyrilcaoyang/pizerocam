@@ -7,8 +7,8 @@ from time import sleep
 from pathlib import Path
 from picamera2 import Picamera2
 from libcamera import controls
-from neopixel import NeoPixel
-from neopixel import board
+import board
+import neopixel
 from sdl_utils import get_logger, send_file_name, receive_file_name
 from sdl_utils import send_file_size, receive_file_size
 
@@ -57,7 +57,7 @@ class CameraServer:
 
     def _init_led(self):
         # NeoPixel LED RING with 12 pixels MUST use board.D10
-        led = NeoPixel(board.D10, 12, auto_write=True)
+        led = neopixel.NeoPixel(board.D10, 12, auto_write=True)
 
         # Blink to show initialization
         for i in range(0, 3):

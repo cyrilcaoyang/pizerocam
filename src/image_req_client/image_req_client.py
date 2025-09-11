@@ -3,9 +3,9 @@ import socket
 from pathlib import Path
 from time import sleep
 from dotenv import load_dotenv
-from sdl_utils import get_logger
-from sdl_utils import connect_socket, send_file_name, receive_file_name
-from sdl_utils import send_file_size, receive_file_size, receive_file
+from ..logger import get_logger
+from ..socket_utils import connect_socket, send_file_name, receive_file_name
+from ..socket_utils import send_file_size, receive_file_size, receive_file
 from .ph_grid_color_reader import ph_from_image
 
 # Load environment variables from .env file

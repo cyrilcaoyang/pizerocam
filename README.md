@@ -20,19 +20,17 @@ PiZeroCam consists of two main modules:
 
 ### Remote Access with Tailscale
 
-PiZeroCam automatically integrates with Tailscale for secure, easy remote access:
+PiZeroCam support integration with Tailscale for secure, easy remote access:
 
 **Benefits:**
-- 🔒 **Secure**: End-to-end encrypted connections
-- 🌐 **Remote**: Access your Pi from anywhere in the world
-- 🚀 **Easy**: No port forwarding or firewall configuration needed
-- 📱 **Cross-platform**: Connect from any device (laptop, phone, tablet)
-- 🔗 **Persistent**: Stable connection even when Pi changes networks
+- **Secure**: End-to-end encrypted connections
+- **Remote**: Access your Pi from anywhere in the world
+- **Easy**: No port forwarding or firewall configuration needed
+- **Persistent**: Stable connection even when Pi changes networks
 
 **How it works:**
-1. Server automatically detects Tailscale IP (100.x.x.x range)
-2. Clients connect using the Tailscale IP instead of local network IP
-3. Access your Pi lab equipment from anywhere securely
+Server automatically detects Tailscale IP (100.x.x.x range)
+Clients connect using the Tailscale IP instead of local network IP
 
 ## Installation
 
@@ -45,11 +43,11 @@ For basic photo requesting and pH analysis:
 ```bash
 git clone https://github.com/cyrilcaoyang/pizerocam.git
 cd pizerocam
-pip install .[client]
+pip install -e ".[client]"
 ```
 
 Alternative client options:
-- `pip install .[client-tesseract]` - for local Tesseract OCR (requires Tesseract installation)
+- `pip install ".[client-tesseract]"` - for local Tesseract OCR (requires Tesseract installation)
 - `pip install .` - base installation without OCR dependencies
 
 ### Server Installation (on Raspberry Pi)

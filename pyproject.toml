@@ -4,14 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pizerocam"
-version = "0.4.0"
+version = "0.5.0"
 description='Python utils package for self-driving labs'
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.8"
 dependencies = [
     "pyyaml>=6.0",
-    "sdl_utils==0.2.0",
     "netifaces>=0.11.0"
 ]
 
@@ -62,6 +61,7 @@ pizerocam-server = "image_server.cli:main_server"
 
 [tool.setuptools]
 packages = ["image_req_client", "image_server"]
+py-modules = ["logger", "socket_utils"]
 
 [tool.setuptools.package-dir]
 "" = "src"

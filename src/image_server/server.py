@@ -9,9 +9,21 @@ from picamera2 import Picamera2
 from libcamera import controls
 import board
 import neopixel
-from ..logger import get_logger
-from ..socket_utils import send_file_name, receive_file_name
-from ..socket_utils import send_file_size, receive_file_size
+
+# Handle imports for both package and direct execution
+try:
+    # Try relative imports (when run as package)
+    from ..logger import get_logger
+    from ..socket_utils import send_file_name, receive_file_name
+    from ..socket_utils import send_file_size, receive_file_size
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent))
+    from logger import get_logger
+    from socket_utils import send_file_name, receive_file_name
+    from socket_utils import send_file_size, receive_file_size
 
 """
 This is a module for the Raspberry Pi Camera Server

@@ -3,9 +3,22 @@ import socket
 from pathlib import Path
 from time import sleep
 from dotenv import load_dotenv
-from ..logger import get_logger
-from ..socket_utils import connect_socket, send_file_name, receive_file_name
-from ..socket_utils import send_file_size, receive_file_size, receive_file
+
+# Handle imports for both package and direct execution
+try:
+    # Try relative imports (when run as package)
+    from ..logger import get_logger
+    from ..socket_utils import connect_socket, send_file_name, receive_file_name
+    from ..socket_utils import send_file_size, receive_file_size, receive_file
+except ImportError:
+    # Fall back to absolute imports (when run directly)
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent))
+    from logger import get_logger
+    from socket_utils import connect_socket, send_file_name, receive_file_name
+    from socket_utils import send_file_size, receive_file_size, receive_file
+
 from .ph_grid_color_reader import ph_from_image
 
 # Load environment variables from .env file

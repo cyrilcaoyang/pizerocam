@@ -3,9 +3,10 @@
 A Python package for remote camera control and pH analysis using Raspberry Pi Zero 2W.
 
 **Key Features:**
-- Remote camera control with LED illumination
+- Remote camera control with LED illumination (default: RGB 10,10,10)
 - Motor control for automated testing
-- pH value analysis from color grid images
+- **Multi-color-space pH analysis** (RGB, LAB, HSV) with interpolation
+- pH estimation to one decimal place using inverse distance weighting
 - Modular client/server architecture
 - Easy installation with optional dependencies
 - CLI tools for both client and server
@@ -132,6 +133,31 @@ pizerocam-client --ip 192.168.1.100 --led 255,0,0
 pizerocam-client --ip 192.168.1.100 --motor
 ```
 
+### Multi-Color-Space pH Analysis
+
+PiZeroCam analyzes pH values using **three different color spaces simultaneously** and returns all results:
+
+- **RGB**: Standard red-green-blue color space
+- **LAB**: Perceptually uniform color space (recommended for best accuracy)
+- **HSV**: Hue-saturation-value color space
+
+All pH analyses:
+- Return interpolated values to **one decimal place** using inverse distance weighting
+- Include distance metrics showing confidence for each color space
+- Generate annotated images highlighting the analyzed region
+
+**Example output:**
+```
+pH ANALYSIS RESULTS
+============================================================
+  RGB: pH   7.3  (distance:  15.23)
+  LAB: pH   7.1  (distance:  12.45)
+  HSV: pH   8.0  (distance:  18.67)
+============================================================
+```
+
+The result with the **smallest distance** typically indicates the most reliable measurement. LAB color space generally provides the best results for color-based pH detection.
+
 ### Python API Usage
 
 **Client API:**
@@ -143,11 +169,14 @@ from image_req_client import ImageReqClient
 client = ImageReqClient()
 client.connect("192.168.1.100")
 
-# Request photo and analyze
+# Request photo and analyze - returns all three color spaces
 image_path = client.request_photo()
 if image_path:
-    ph_value = client.analyze_photo(image_path)
-    print(f"pH value: {ph_value}")
+    ph_result = client.analyze_photo(image_path)
+    # Returns: {'rgb': 7.3, 'lab': 7.1, 'hsv': 8.0, 'distances': {...}}
+    print(f"RGB pH: {ph_result['rgb']:.1f}")
+    print(f"LAB pH: {ph_result['lab']:.1f}")
+    print(f"HSV pH: {ph_result['hsv']:.1f}")
 
 # Control LED and motor
 client.change_led_color(255, 0, 0)  # Red LED
@@ -159,8 +188,11 @@ client.disconnect()
 # Or use as context manager
 with ImageReqClient() as client:
     client.connect("192.168.1.100")
-    image_path, ph_value = client.request_and_analyze_photo()
-    print(f"Image: {image_path}, pH: {ph_value}")
+    image_path, ph_result = client.request_and_analyze_photo()
+    if ph_result != "NULL":
+        # Use whichever color space you prefer
+        lab_ph = ph_result['lab']  # LAB is best for color perception
+        print(f"Image: {image_path}, LAB pH: {lab_ph:.1f}")
 ```
 
 **Server API:**
@@ -213,9 +245,19 @@ print(f"Server status: {'Running' if server.is_running() else 'Stopped'}")
 ```python
 from image_req_client import ph_from_image
 
-# Analyze existing image
-ph_value = ph_from_image("path/to/image.jpg")
-print(f"pH: {ph_value}")  # Returns pH value or "NULL"
+# Analyze existing image - returns all three color spaces
+ph_result = ph_from_image(
+    "path/to/image.jpg",
+    return_all_color_spaces=True,
+    output_dir="same",  # Save annotated images in same folder
+    interpolate=True     # Interpolate to 1 decimal place
+)
+
+if ph_result != "NULL":
+    print(f"RGB pH: {ph_result['rgb']:.1f}")
+    print(f"LAB pH: {ph_result['lab']:.1f}")
+    print(f"HSV pH: {ph_result['hsv']:.1f}")
+    print(f"Distances: {ph_result['distances']}")
 ```
 
 ## Server Control and Management
@@ -508,32 +550,77 @@ server = ImageServer(init_camera=True, init_motor=True)
 
 ## pH Analysis
 
-The pH analysis tool uses Google Cloud Vision API for OCR text detection and color analysis to determine pH values from test strips.
+The pH analysis tool uses Google Cloud Vision API for OCR text detection and multi-color-space analysis to determine pH values from test strips.
 
 ### Features
-- Detects pH numbers (1-12) in grid layouts
-- Analyzes color blocks below detected numbers
-- Uses BGR color values and Euclidean distance for pH determination
-- Generates labeled output images for verification
-- Handles multi-digit number splitting intelligently
+- **Multi-color-space analysis**: Analyzes pH using RGB, LAB, and HSV color spaces
+- **Interpolated pH estimation**: Estimates pH to one decimal place using inverse distance weighting
+- **OCR-based detection**: Detects pH numbers (1-12) in grid layouts using Google Cloud Vision API
+- **Color block analysis**: Analyzes color blocks below detected numbers
+- **Distance metrics**: Calculates Euclidean distances in each color space
+- **Visual output**: Generates annotated images highlighting ROI and detected pH boxes
+- **Smart number handling**: Handles multi-digit number splitting intelligently
+
+### Color Spaces
+- **RGB**: Standard red-green-blue color space
+- **LAB**: Perceptually uniform color space (recommended for best color matching)
+- **HSV**: Hue-saturation-value color space
 
 ### Requirements
 - Google Cloud Vision API credentials
 - Environment variable: `GOOGLE_APPLICATION_CREDENTIALS`
+- OpenCV (cv2) for color space conversions
 
 ### Configuration
 The analysis region is currently configured for coordinates (750, 1100, 150, 300). Modify in the source code as needed for your specific test strips.
 
+### Output
+All pH analyses return a dictionary containing:
+```python
+{
+    'rgb': 7.3,      # pH value from RGB color space
+    'lab': 7.1,      # pH value from LAB color space (recommended)
+    'hsv': 8.0,      # pH value from HSV color space
+    'distances': {   # Minimum distances to reference colors
+        'rgb': 15.23,
+        'lab': 12.45,
+        'hsv': 18.67
+    }
+}
+```
+
+Annotated images are saved showing:
+- Step 1: OCR text detection boxes
+- Step 2: Defined color boxes
+- Step 3: Highlighted target box with pH result
+
 ## API Reference
 
 ### ImageReqClient Methods
-- `connect(ip)` - Connect to server
-- `disconnect()` - Disconnect from server  
-- `request_photo()` - Request and receive photo
-- `analyze_photo(filepath)` - Analyze photo for pH
-- `request_and_analyze_photo()` - Combined request and analysis
-- `change_led_color(r, g, b)` - Change LED color
-- `run_motor()` - Run motor
+
+**Constructor:**
+- `ImageReqClient(port=2222, logger=None)`
+  - `port`: Server port (default: 2222)
+  - `logger`: Optional logger instance
+
+**Connection Methods:**
+- `connect(ip)` - Connect to server (returns bool)
+- `disconnect()` - Disconnect from server (returns bool)
+- Context manager support (`__enter__`/`__exit__`)
+
+**Photo Methods:**
+- `request_photo()` - Request and receive photo (returns str filepath or None)
+- `analyze_photo(filepath, output_dir="same")` - Analyze photo for pH
+  - Returns: `dict` with `{'rgb': float, 'lab': float, 'hsv': float, 'distances': dict}` or `"NULL"`
+- `request_and_analyze_photo(output_dir="same")` - Combined request and analysis
+  - Returns: `tuple` of `(image_path, ph_result)`
+
+**Hardware Control:**
+- `change_led_color(r, g, b)` - Change LED color (returns bool)
+- `run_motor()` - Run motor (returns bool)
+
+**Interactive:**
+- `interactive_session()` - Start interactive menu-driven session
 
 ### ImageServer Methods
 
@@ -562,7 +649,7 @@ The analysis region is currently configured for coordinates (750, 1100, 150, 300
 --ip IP          Server IP address (required)
 --port PORT      Server port (default: 2222)
 --photo          Request photo
---analyze        Analyze photo for pH (with --photo)
+--analyze        Analyze photo for pH (returns RGB, LAB, HSV)
 --led R,G,B      Change LED color
 --motor          Run motor
 --interactive    Interactive session (default)
@@ -587,18 +674,23 @@ pizerocam/
 ├── src/
 │   ├── image_req_client/          # Client module
 │   │   ├── __init__.py
-│   │   ├── image_req_client.py    # Main client class
-│   │   ├── ph_grid_color_reader.py # pH analysis
-│   │   ├── photo_client.py        # Legacy client
+│   │   ├── image_req_client.py    # Main client class (use this!)
+│   │   ├── ph_grid_color_reader.py # Multi-color-space pH analysis
+│   │   ├── simple_photo_analyzer.py # Simple pH analyzer (no OCR)
+│   │   ├── photo_analyzer.py      # DEPRECATED: legacy analyzers
 │   │   └── cli.py                 # CLI interface
-│   └── image_server/              # Server module
-│       ├── __init__.py
-│       ├── image_server.py        # Main server class
-│       ├── server.py              # Camera server
-│       ├── ph_test_server.py      # Extended server with motor
-│       ├── PCA9685.py            # Motor driver
-│       └── cli.py                # CLI interface
+│   ├── image_server/              # Server module
+│   │   ├── __init__.py
+│   │   ├── image_server.py        # High-level server wrapper
+│   │   ├── server.py              # CameraServer (camera + LED + motor)
+│   │   ├── PCA9685.py            # Motor driver
+│   │   └── cli.py                # CLI interface
+│   ├── logger.py                  # Logging utilities
+│   └── socket_utils.py           # Socket communication helpers
 ├── examples/                      # Example scripts
+│   ├── analyze_ph_multi_colorspace.py
+│   ├── ph_color_space_examples.py
+│   └── ph_read.py
 ├── pyproject.toml                # Package configuration
 └── README.md
 ```

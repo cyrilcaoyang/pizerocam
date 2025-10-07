@@ -124,11 +124,8 @@ Examples:
                 print("Failed to run motor")
                 
         elif args.interactive:
-            # Import the original interactive session
-            from .photo_client import PhotoClient
-            original_client = PhotoClient()
-            original_client.server_ip = args.ip
-            original_client.interactive_client_session()
+            # Start interactive session
+            client.interactive_session()
     
     except KeyboardInterrupt:
         print("\nInterrupted by user")

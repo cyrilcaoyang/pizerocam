@@ -113,14 +113,73 @@ class SimplePhotoAnalyzer:
         self.logger.info(f"Saved annotated image to: {output_path}")
         return output_path
 
-    def find_closest_ph(self, calibration_sample_paths, unknown_sample_path):
+    def convert_color_space(self, rgb_color, color_space='rgb'):
         """
-        Compare unknown sample to known pH samples
+        Convert RGB color to specified color space
+        Args:
+            rgb_color: RGB color as [R, G, B] list/array
+            color_space: 'rgb', 'lab', or 'hsv'
+        Returns:
+            Converted color as numpy array
+        """
+        rgb_array = np.array(rgb_color, dtype=np.uint8).reshape(1, 1, 3)
+        
+        if color_space.lower() == 'rgb':
+            return rgb_array.flatten().astype(np.float32)
+        elif color_space.lower() == 'lab':
+            # Convert RGB to LAB
+            lab = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2LAB)
+            return lab.flatten().astype(np.float32)
+        elif color_space.lower() == 'hsv':
+            # Convert RGB to HSV
+            hsv = cv2.cvtColor(rgb_array, cv2.COLOR_RGB2HSV)
+            return hsv.flatten().astype(np.float32)
+        else:
+            raise ValueError(f"Unsupported color space: {color_space}. Use 'rgb', 'lab', or 'hsv'.")
+
+    def interpolate_ph(self, distances):
+        """
+        Interpolate pH value to one decimal place based on two closest references
+        Args:
+            distances: Dict of {pH: distance}
+        Returns:
+            Interpolated pH value rounded to 1 decimal place
+        """
+        # Sort pH values by distance
+        sorted_phs = sorted(distances.items(), key=lambda x: x[1])
+        
+        if len(sorted_phs) < 2:
+            # Not enough references for interpolation
+            return round(sorted_phs[0][0], 1)
+        
+        # Get two closest pH values
+        ph1, dist1 = sorted_phs[0]
+        ph2, dist2 = sorted_phs[1]
+        
+        # If distances are very similar or first distance is zero, return closest
+        if dist1 == 0 or dist2 == 0:
+            return round(ph1, 1)
+        
+        # Inverse distance weighting for interpolation
+        # The closer the distance, the more weight it gets
+        weight1 = 1.0 / dist1
+        weight2 = 1.0 / dist2
+        total_weight = weight1 + weight2
+        
+        interpolated_ph = (ph1 * weight1 + ph2 * weight2) / total_weight
+        return round(interpolated_ph, 1)
+
+    def find_closest_ph(self, calibration_sample_paths, unknown_sample_path, 
+                       color_space='rgb', interpolate=True):
+        """
+        Compare unknown sample to known pH samples using specified color space
         Args:
             calibration_sample_paths: Dict of {"pH": "image_path"}
             unknown_sample_path: Path to test image
+            color_space: 'rgb', 'lab', or 'hsv' - color space for distance calculation
+            interpolate: If True, interpolate pH to 1 decimal place; if False, return closest match
         Returns:
-            (closest_ph, color_distances)
+            (estimated_ph, color_distances, output_path)
         """
         try:
             # Load reference colors
@@ -140,21 +199,31 @@ class SimplePhotoAnalyzer:
             try:
                 unknown_data = self.get_roi_data(Path(unknown_sample_path))
                 unknown_color = unknown_data['color']
-                self.logger.info(f"Unknown color is {unknown_color}")
+                self.logger.info(f"Unknown RGB color: {unknown_color}")
             except Exception as e:
                 raise ValueError(f"Unknown sample analysis failed: {str(e)}")
 
-            # Calculate distances with validation
-            distances = {}
-            unknown_array = np.array(unknown_color)
-            for ph, ref_color in reference_colors.items():
-                self.logger.debug(f"The reference color for pH={ph} is {ref_color}.")
-                ref_array = np.array(ref_color)
-                distances[ph] = np.linalg.norm(ref_array - unknown_array)
+            # Convert to specified color space
+            unknown_converted = self.convert_color_space(unknown_color, color_space)
+            self.logger.info(f"Color space: {color_space.upper()}, Converted unknown: {unknown_converted}")
 
-            closest_ph = min(distances, key=distances.get)
-            output_path = self.save_annotated_image(unknown_data, closest_ph)
-            return closest_ph, distances, output_path
+            # Calculate distances in the specified color space
+            distances = {}
+            for ph, ref_color in reference_colors.items():
+                ref_converted = self.convert_color_space(ref_color, color_space)
+                self.logger.debug(f"pH={ph} reference in {color_space.upper()}: {ref_converted}")
+                distances[ph] = np.linalg.norm(ref_converted - unknown_converted)
+
+            # Get pH estimate
+            if interpolate:
+                estimated_ph = self.interpolate_ph(distances)
+                self.logger.info(f"Interpolated pH estimate: {estimated_ph}")
+            else:
+                estimated_ph = min(distances, key=distances.get)
+                self.logger.info(f"Closest pH match: {estimated_ph}")
+            
+            output_path = self.save_annotated_image(unknown_data, estimated_ph)
+            return estimated_ph, distances, output_path
 
         except Exception as e:
             self.logger.error(f"Analysis failed: {str(e)}")
@@ -174,14 +243,23 @@ if __name__ == "__main__":
 
     unknown_sample = "photos/simple_workflow/capture_20250226_200200200_unknown.jpg"
 
-    try:
-        closest_ph, distances, output_path = analyzer.find_closest_ph(
-            known_samples, unknown_sample
-        )
-        analyzer.logger.info("All distances:")
-        for ph, distance in distances.items():
-            analyzer.logger.info(f"pH {ph}: {distance:.2f}")
-        analyzer.logger.info(f"Closest pH: {closest_ph}")
-        analyzer.logger.info(f"Annotated image saved to: {output_path}")
-    except Exception as e:
-        analyzer.logger.error(f"Analysis failed: {str(e)}")
+    # Example: Try different color spaces
+    for color_space in ['rgb', 'lab', 'hsv']:
+        try:
+            analyzer.logger.info(f"\n{'='*60}")
+            analyzer.logger.info(f"Testing with {color_space.upper()} color space")
+            analyzer.logger.info(f"{'='*60}")
+            
+            estimated_ph, distances, output_path = analyzer.find_closest_ph(
+                known_samples, unknown_sample,
+                color_space=color_space,  # Choose: 'rgb', 'lab', or 'hsv'
+                interpolate=True  # Set to False for exact match only
+            )
+            
+            analyzer.logger.info("All distances:")
+            for ph, distance in distances.items():
+                analyzer.logger.info(f"  pH {ph}: {distance:.2f}")
+            analyzer.logger.info(f"Estimated pH: {estimated_ph}")
+            analyzer.logger.info(f"Annotated image saved to: {output_path}")
+        except Exception as e:
+            analyzer.logger.error(f"Analysis failed: {str(e)}")

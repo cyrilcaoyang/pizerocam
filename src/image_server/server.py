@@ -33,9 +33,9 @@ with open(script_dir / 'server_settings.yaml', 'r') as file:
 class CameraServer:
     """
     This is a class of a server with ability to take photos on demand with user-defined
-    LED backlight. The client can request photos and changing the LED backlight.
+    LED backlight. The client can request photos, change LED backlight, and control motors.
     """
-    def __init__(self, host="0,0,0,0", port=server_port, init_camera=True, resolution=None):
+    def __init__(self, host="0,0,0,0", port=server_port, init_camera=True, init_motor=True, resolution=None):
         self.host = host
         self.port = port
         self.logger = self._setup_logger()
@@ -43,8 +43,14 @@ class CameraServer:
         self.led = self._init_led()
         self.resolution_preference = resolution
         self.cam = self._init_cam() if init_camera else None
-        self.color = (200, 200, 200)    # Default LED configuration
+        self.color = (10, 10, 10)    # Default LED configuration
         self.camera_lock = threading.Lock()     # Thread lock
+        
+        # Motor control (for pH testing automation)
+        self.motor_driver = self._init_motor_driver() if init_motor else None
+        self.PWMA = 0
+        self.AIN1 = 1
+        self.AIN2 = 2
 
     @staticmethod
     def _setup_logger():
@@ -171,6 +177,20 @@ class CameraServer:
             led.fill((0, 0, 0))
         self.logger.info("LED initialized!")
         return led
+    
+    def _init_motor_driver(self):
+        """Initialize PCA9685 motor driver for pH testing automation."""
+        try:
+            from .PCA9685 import PCA9685
+            self.logger.info("Attempting to initialize motor driver...")
+            pwm = PCA9685(0x40, debug=False)
+            pwm.setPWMFreq(50)
+            self.logger.info("Motor driver initialized successfully.")
+            return pwm
+        except Exception as e:
+            self.logger.error(f"Failed to initialize motor driver: {e}")
+            self.logger.warning("Motor functionality will be disabled")
+            return None
 
     def test_led(self, led):
         self.logger.info("Start testing LED")
@@ -182,6 +202,36 @@ class CameraServer:
                 sleep(0.1)
         led.fill((0, 0, 0))
         self.logger.info("LED test complete.")
+    
+    def run_motor(self):
+        """
+        Run motor A for 1 second at 50% speed.
+        Used for pH strip dispensing/positioning automation.
+        
+        Returns:
+            bool: True if motor ran successfully, False otherwise
+        """
+        try:
+            if self.motor_driver is None:
+                self.logger.error("Motor driver not initialized - cannot run motor")
+                return False
+                
+            self.logger.info("Running motor...")
+            # Set speed to 50%
+            self.motor_driver.setDutycycle(self.PWMA, 50)
+            
+            # Set direction to forward
+            self.motor_driver.setLevel(self.AIN1, 0)
+            self.motor_driver.setLevel(self.AIN2, 1)
+            sleep(1)
+            
+            # Stop motor
+            self.motor_driver.setDutycycle(self.PWMA, 0)
+            self.logger.info("Motor run complete.")
+            return True
+        except Exception as e:
+            self.logger.error(f"Motor run failed: {e}")
+            return False
 
     def _init_cam(self):
         self.logger.info("Initializing camera session")
@@ -385,6 +435,12 @@ class CameraServer:
                     except Exception as e:
                         conn.sendall(f"INVALID_RGB: {e}".encode('utf-8'))
                         self.logger.error(f"Invalid RGB values: {rgb_data}.")
+
+                elif msg == "RUN_MOTOR":
+                    if self.run_motor():
+                        conn.sendall("MOTOR_RUN_COMPLETE".encode('utf-8'))
+                    else:
+                        conn.sendall("MOTOR_RUN_FAILED".encode('utf-8'))
 
         except Exception as e:
             self.logger.error(f"Handle client error: {e}.")

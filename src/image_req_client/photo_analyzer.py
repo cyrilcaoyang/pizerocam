@@ -1,11 +1,17 @@
 """
+DEPRECATED: This module is kept for backward compatibility only.
+
+For new projects, use:
+  - ph_grid_color_reader.py (recommended for OCR-based pH detection)
+  - simple_photo_analyzer.py (recommended for simple color-based pH detection)
+
 Photo analyzer that give pH readings.
 1. Local method: We use Tesseract for OCR
 2. Cloud method: We use google cloud vision API for OCR
 
 Author: Yang Cao, Acceleration Consortium
 Email: yangcyril.cao@utoronto.ca
-Version: 0.2
+Version: 0.2 (DEPRECATED)
 
 For Windows computers, please install tesseract first  https://github.com/UB-Mannheim/tesseract/wiki
 

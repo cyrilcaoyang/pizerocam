@@ -277,24 +277,119 @@ def highlight_and_label_box(image, box, label, out_path, color_boxes=None, detec
         print(f"Saved highlighted box with label to {out_path}")
     return img
 
-def find_closest_detected_ph(target_bgr, avg_colors):
+def convert_bgr_to_color_space(bgr_color, color_space='rgb'):
+    """
+    Convert BGR color to specified color space.
+    Args:
+        bgr_color: BGR color as [B, G, R] list/array
+        color_space: 'rgb', 'lab', or 'hsv'
+    Returns:
+        Converted color as numpy array
+    """
+    bgr_array = np.array(bgr_color, dtype=np.uint8).reshape(1, 1, 3)
+    
+    if color_space.lower() == 'rgb':
+        # Convert BGR to RGB for consistency
+        rgb = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2RGB)
+        return rgb.flatten().astype(np.float32)
+    elif color_space.lower() == 'lab':
+        # Convert BGR to LAB
+        lab = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2LAB)
+        return lab.flatten().astype(np.float32)
+    elif color_space.lower() == 'hsv':
+        # Convert BGR to HSV
+        hsv = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2HSV)
+        return hsv.flatten().astype(np.float32)
+    else:
+        raise ValueError(f"Unsupported color space: {color_space}. Use 'rgb', 'lab', or 'hsv'.")
+
+def find_closest_detected_ph(target_bgr, avg_colors, color_space='rgb'):
     """
     Returns the ph_text and distance of the closest detected color box in avg_colors.
+    Args:
+        target_bgr: Target color in BGR format [B, G, R]
+        avg_colors: List of color data from get_average_colors
+        color_space: 'rgb', 'lab', or 'hsv' - color space for distance calculation
+    Returns:
+        (best_ph, min_dist) tuple
     """
     min_dist = float('inf')
     best_ph = None
+    
+    # Convert target color to specified color space
+    target_converted = convert_bgr_to_color_space(target_bgr, color_space)
+    
     for entry in avg_colors:
         bgr = [int(round(c)) for c in entry['avg_color']]
-        dist = sum((a - b) ** 2 for a, b in zip(target_bgr, bgr)) ** 0.5
+        # Convert reference color to specified color space
+        ref_converted = convert_bgr_to_color_space(bgr, color_space)
+        # Calculate Euclidean distance in the color space
+        dist = np.linalg.norm(ref_converted - target_converted)
         if dist < min_dist:
             min_dist = dist
             best_ph = entry['ph_text']
     return best_ph, min_dist
 
-def ph_from_image(image_path):
-    # Setup output directory in ~/Pictures/pH_photos/
-    home_dir = Path.home()
-    output_dir = home_dir / "Pictures" / "pH_photos"
+def interpolate_ph_from_distances(distances):
+    """
+    Interpolate pH value to one decimal place based on two closest references.
+    Args:
+        distances: Dict of {pH_string: distance}
+    Returns:
+        Interpolated pH value rounded to 1 decimal place as float
+    """
+    # Convert pH strings to floats and sort by distance
+    ph_distances = [(float(ph), dist) for ph, dist in distances.items()]
+    sorted_phs = sorted(ph_distances, key=lambda x: x[1])
+    
+    if len(sorted_phs) < 2:
+        # Not enough references for interpolation
+        return round(sorted_phs[0][0], 1)
+    
+    # Get two closest pH values
+    ph1, dist1 = sorted_phs[0]
+    ph2, dist2 = sorted_phs[1]
+    
+    # If distances are very similar or first distance is zero, return closest
+    if dist1 == 0 or dist2 == 0:
+        return round(ph1, 1)
+    
+    # Inverse distance weighting for interpolation
+    weight1 = 1.0 / dist1
+    weight2 = 1.0 / dist2
+    total_weight = weight1 + weight2
+    
+    interpolated_ph = (ph1 * weight1 + ph2 * weight2) / total_weight
+    return round(interpolated_ph, 1)
+
+def ph_from_image(image_path, return_all_color_spaces=False, output_dir=None, interpolate=True):
+    """
+    Detect pH from color grid image.
+    
+    Args:
+        image_path: Path to the image file to analyze
+        return_all_color_spaces: If True, returns dict with results from RGB, LAB, and HSV.
+                                 If False, returns single pH value from RGB (default behavior)
+        output_dir: Directory to save annotated images. If None, saves to ~/Pictures/pH_photos/
+                   If "same", saves to same directory as input image
+        interpolate: If True, interpolates pH to 1 decimal place; if False, returns exact match
+    
+    Returns:
+        If return_all_color_spaces=False: pH value as string or float (e.g., "7" or 7.3)
+        If return_all_color_spaces=True: dict like {'rgb': 7.3, 'lab': 7.1, 'hsv': 8.0, 
+                                                     'distances': {'rgb': 15.2, 'lab': 12.1, 'hsv': 18.5}}
+    """
+    # Setup output directory
+    if output_dir == "same":
+        # Save in same directory as input image
+        output_dir = Path(image_path).parent
+    elif output_dir is None:
+        # Default to ~/Pictures/pH_photos/
+        home_dir = Path.home()
+        output_dir = home_dir / "Pictures" / "pH_photos"
+    else:
+        output_dir = Path(output_dir)
+    
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Extract base filename without extension from input image
@@ -324,15 +419,71 @@ def ph_from_image(image_path):
 
     # --- STEP 3: Get average colors ---
     avg_colors = get_average_colors(image, color_boxes)
-    # --- STEP 4: Demo for a given box ---
+    # --- STEP 4: Find pH using different color spaces ---
     avg_bgr, box_coords, roi = get_average_color_of_box(image, 750, 1100, 150, 300) # this is the box of pH strip
-    closest_ph, dist = find_closest_detected_ph(avg_bgr, avg_colors)
-    out_path3 = output_dir / f"{input_filename}_step3_highlighted_box.png"
-    highlight_and_label_box(image, box_coords, closest_ph, str(out_path3), color_boxes=color_boxes, detections=detections)
-    if closest_ph is not None:
-        return closest_ph
+    
+    if return_all_color_spaces:
+        # Calculate pH for all three color spaces
+        results = {}
+        all_distances = {}
+        color_spaces = ['rgb', 'lab', 'hsv']
+        
+        for color_space in color_spaces:
+            # Get distances to all pH values in this color space
+            distances_dict = {}
+            target_converted = convert_bgr_to_color_space(avg_bgr, color_space)
+            
+            for entry in avg_colors:
+                bgr = [int(round(c)) for c in entry['avg_color']]
+                ref_converted = convert_bgr_to_color_space(bgr, color_space)
+                dist = np.linalg.norm(ref_converted - target_converted)
+                distances_dict[entry['ph_text']] = dist
+            
+            # Interpolate or get closest
+            if interpolate:
+                ph_value = interpolate_ph_from_distances(distances_dict)
+                results[color_space] = ph_value
+            else:
+                closest_ph = min(distances_dict, key=distances_dict.get)
+                results[color_space] = closest_ph
+            
+            # Store minimum distance for reference
+            all_distances[color_space] = min(distances_dict.values())
+            
+            print(f"{color_space.upper()} color space: pH={results[color_space]}, min distance={all_distances[color_space]:.2f}")
+        
+        # Save highlighted image with RGB result (default)
+        out_path3 = output_dir / f"{input_filename}_step3_highlighted_box.png"
+        highlight_and_label_box(image, box_coords, results['rgb'], str(out_path3), 
+                               color_boxes=color_boxes, detections=detections)
+        
+        results['distances'] = all_distances
+        return results
     else:
-        return None
+        # Single color space mode - return pH using RGB
+        distances_dict = {}
+        target_converted = convert_bgr_to_color_space(avg_bgr, 'rgb')
+        
+        for entry in avg_colors:
+            bgr = [int(round(c)) for c in entry['avg_color']]
+            ref_converted = convert_bgr_to_color_space(bgr, 'rgb')
+            dist = np.linalg.norm(ref_converted - target_converted)
+            distances_dict[entry['ph_text']] = dist
+        
+        # Interpolate or get closest
+        if interpolate:
+            ph_result = interpolate_ph_from_distances(distances_dict)
+        else:
+            ph_result = min(distances_dict, key=distances_dict.get)
+        
+        out_path3 = output_dir / f"{input_filename}_step3_highlighted_box.png"
+        highlight_and_label_box(image, box_coords, ph_result, str(out_path3), 
+                               color_boxes=color_boxes, detections=detections)
+        
+        if ph_result is not None:
+            return ph_result
+        else:
+            return None
 
 
 def main():

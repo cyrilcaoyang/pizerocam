@@ -25,7 +25,7 @@ class ImageReqClient:
     This class provides a clean interface for:
     - Connecting to an image server
     - Requesting photos
-    - Analyzing photos for pH values
+    - Analyzing photos for pH values (returns all three color spaces: RGB, LAB, HSV)
     - Managing the connection lifecycle
     """
     
@@ -163,39 +163,72 @@ class ImageReqClient:
             self.logger.error(f"Error receiving photo: {e}")
             return False, None
     
-    def analyze_photo(self, filepath):
+    def analyze_photo(self, filepath, output_dir="same"):
         """
-        Analyze a photo for pH value using the pH grid color reader.
+        Analyze a photo for pH value using all three color spaces (RGB, LAB, HSV).
         
         Args:
             filepath (str): Path to the image file to analyze
+            output_dir (str): Directory to save annotated images. 
+                             "same" = same folder as image (default)
+                             None = ~/Pictures/pH_photos/
             
         Returns:
-            str: pH value as string, or "NULL" if analysis failed
+            dict: {'rgb': 7.3, 'lab': 7.1, 'hsv': 8.0, 'distances': {...}}
+                 or "NULL" if analysis failed
         """
         try:
             if not os.path.exists(filepath):
                 self.logger.error(f"Image file not found: {filepath}")
                 return "NULL"
                 
-            ph_result = ph_from_image(filepath)
-            self.logger.info(f"pH analysis result: {ph_result}")
+            # Get all color spaces from the analysis
+            ph_result = ph_from_image(filepath, 
+                                     return_all_color_spaces=True,
+                                     output_dir=output_dir,
+                                     interpolate=True)
+            
+            if ph_result == "NULL":
+                self.logger.error("pH analysis failed")
+                return "NULL"
+            
+            # Print formatted results
+            print("\n" + "="*60)
+            print("pH ANALYSIS RESULTS")
+            print("="*60)
+            print(f"  RGB: pH {ph_result['rgb']:>5.1f}  (distance: {ph_result['distances']['rgb']:>6.2f})")
+            print(f"  LAB: pH {ph_result['lab']:>5.1f}  (distance: {ph_result['distances']['lab']:>6.2f})")
+            print(f"  HSV: pH {ph_result['hsv']:>5.1f}  (distance: {ph_result['distances']['hsv']:>6.2f})")
+            print("="*60 + "\n")
+            
+            # Log to file
+            self.logger.info("pH analysis results:")
+            self.logger.info(f"  RGB: {ph_result['rgb']:.1f} (distance: {ph_result['distances']['rgb']:.2f})")
+            self.logger.info(f"  LAB: {ph_result['lab']:.1f} (distance: {ph_result['distances']['lab']:.2f})")
+            self.logger.info(f"  HSV: {ph_result['hsv']:.1f} (distance: {ph_result['distances']['hsv']:.2f})")
+            
             return ph_result
             
         except Exception as e:
             self.logger.error(f"Error analyzing photo: {e}")
             return "NULL"
     
-    def request_and_analyze_photo(self):
+    def request_and_analyze_photo(self, output_dir="same"):
         """
         Convenience method to request a photo and immediately analyze it.
         
+        Args:
+            output_dir (str): Directory to save annotated images. 
+                             "same" = same folder as image (default)
+                             None = ~/Pictures/pH_photos/
+        
         Returns:
-            tuple: (image_path: str or None, ph_value: str)
+            tuple: (image_path: str or None, ph_result: dict or "NULL")
+                   ph_result dict contains: {'rgb': 7.3, 'lab': 7.1, 'hsv': 8.0, 'distances': {...}}
         """
         image_path = self.request_photo()
         if image_path:
-            ph_value = self.analyze_photo(image_path)
+            ph_value = self.analyze_photo(image_path, output_dir=output_dir)
             return image_path, ph_value
         else:
             return None, "NULL"
@@ -274,6 +307,81 @@ class ImageReqClient:
             self.logger.error(f"Error running motor: {e}")
             return False
     
+    def interactive_session(self):
+        """
+        Start an interactive terminal session for manual control.
+        Must be connected to server first.
+        """
+        if not self.connected:
+            self.logger.error("Not connected to server. Call connect() first.")
+            return
+        
+        print("\n" + "="*60)
+        print("Interactive PiZeroCam Session")
+        print("="*60)
+        
+        while True:
+            print("\nOptions:")
+            print("  1. Request photo")
+            print("  2. Request photo and analyze pH")
+            print("  3. Change LED color")
+            print("  4. Run motor")
+            print("  5. Exit")
+            
+            choice = input("\nEnter your choice (1-5): ").strip()
+            
+            if choice == "1":
+                print("\nRequesting photo...")
+                image_path = self.request_photo()
+                if image_path:
+                    print(f"Photo saved to: {image_path}")
+                else:
+                    print("Failed to receive photo")
+                    
+            elif choice == "2":
+                print("\nRequesting photo and analyzing pH...")
+                image_path, ph_value = self.request_and_analyze_photo(
+                    return_all_color_spaces=True,
+                    output_dir="same",
+                    interpolate=True,
+                    print_results=True  # This will print the formatted results
+                )
+                if image_path:
+                    print(f"\n[INFO] Photo saved to: {image_path}")
+                    if ph_value != "NULL":
+                        # Results already printed by analyze_photo
+                        pass
+                    else:
+                        print("pH analysis failed")
+                else:
+                    print("Failed to receive photo")
+                    
+            elif choice == "3":
+                rgb_input = input("Enter RGB values (R,G,B): ").strip()
+                try:
+                    r, g, b = map(int, rgb_input.split(','))
+                    print(f"\nChanging LED to RGB({r},{g},{b})...")
+                    if self.change_led_color(r, g, b):
+                        print("LED color changed successfully!")
+                    else:
+                        print("Failed to change LED color")
+                except ValueError:
+                    print("Invalid format. Use R,G,B (e.g., 255,0,0)")
+                    
+            elif choice == "4":
+                print("\nRunning motor...")
+                if self.run_motor():
+                    print("Motor run complete!")
+                else:
+                    print("Failed to run motor")
+                    
+            elif choice == "5":
+                print("\nExiting interactive session...")
+                break
+                
+            else:
+                print("Invalid choice. Please enter 1-5.")
+    
     def __enter__(self):
         """Context manager entry."""
         return self
@@ -283,7 +391,4 @@ class ImageReqClient:
         self.disconnect()
 
 
-# For backward compatibility, also expose the original PhotoClient
-from .photo_client import PhotoClient
-
-__all__ = ['ImageReqClient', 'PhotoClient'] 
+__all__ = ['ImageReqClient'] 

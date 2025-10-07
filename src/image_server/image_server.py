@@ -1,6 +1,6 @@
 import socket
 import threading
-from .ph_test_server import PHTestServer
+from .server import CameraServer
 
 
 class ImageServer:
@@ -27,7 +27,7 @@ class ImageServer:
         """
         self.host = host
         self.port = port
-        self.server = PHTestServer(host, port, init_camera, init_motor, resolution)
+        self.server = CameraServer(host, port, init_camera, init_motor, resolution)
         self.running = False
         self.server_socket = None
         self.server_thread = None
@@ -176,8 +176,7 @@ class ImageServer:
         self.stop()
 
 
-# For backward compatibility, also expose the original classes
+# For backward compatibility, also expose the original CameraServer class
 from .server import CameraServer
-from .ph_test_server import PHTestServer
 
-__all__ = ['ImageServer', 'CameraServer', 'PHTestServer'] 
+__all__ = ['ImageServer', 'CameraServer'] 

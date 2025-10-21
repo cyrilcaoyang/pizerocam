@@ -1,4 +1,4 @@
-import os
+import os, logger
 import socket
 from pathlib import Path
 from time import sleep

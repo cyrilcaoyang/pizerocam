@@ -112,3 +112,4 @@ photos-*/
 
 # Environment variables
 .env*
+google-cloud-credentials.json

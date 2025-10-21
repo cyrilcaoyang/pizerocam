@@ -234,14 +234,15 @@ if __name__ == "__main__":
     analyzer = SimplePhotoAnalyzer()
 
     known_samples = {
-        1.0: "photos/simple_workflow/capture_20250226_200200200_1.jpg",
-        4.0: "photos/simple_workflow/capture_20250226_200200200_4.jpg",
-        7.0: "photos/simple_workflow/capture_20250226_200200200_7.jpg",
-        10.0: "photos/simple_workflow/capture_20250226_200200200_10.jpg",
-        12.5: "photos/simple_workflow/capture_20250226_200200200_12.jpg",
+        1.0: "test_photos/simple_workflow/capture_20250226_200200200_1.jpg",
+        4.0: "test_photos/simple_workflow/capture_20250226_200200200_4.jpg",
+        7.0: "test_photos/simple_workflow/capture_20250226_200200200_7.jpg",
+        10.0: "test_photos/simple_workflow/capture_20250226_200200200_10.jpg",
+        12.5: "test_photos/simple_workflow/capture_20250226_200200200_12.jpg",
     }
+    
 
-    unknown_sample = "photos/simple_workflow/capture_20250226_200200200_unknown.jpg"
+    unknown_sample = "test_photos/simple_workflow/capture_20250226_200200200_unknown.jpg"
 
     # Example: Try different color spaces
     for color_space in ['rgb', 'lab', 'hsv']:

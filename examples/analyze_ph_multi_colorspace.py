@@ -16,7 +16,7 @@ def main():
     client = ImageReqClient(port=2222)
     
     # Connect to the server (replace with your server IP)
-    server_ip = "192.168.1.100"  # Change this to your server's IP
+    server_ip = "172.31.34.163"  # Change this to your server's IP
     
     if not client.connect(server_ip):
         print("Failed to connect to server")

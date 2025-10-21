@@ -17,7 +17,8 @@ if os.getenv('GOOGLE_APPLICATION_CREDENTIALS'):
 
 # --- CONFIG ---
 # Path to the image to analyze
-IMAGE_PATH = "photos-2025-03-26-pH/capture_20250714-182920_100100100.jpg"  # Change to your image path
+IMAGE_PATH = "C:/Users/yasee/Documents/Projects/pizerocam/test_images/capture_20250909-171227_200200200.jpg"
+  # Change to your image path
 
 # --- STEP 1: OCR Detection and Text Box Visualization ---
 
@@ -213,9 +214,21 @@ def split_multi_digit_detection(det, avg_digit_width, width_thresh=2):
 def get_average_colors(image, color_boxes):
     """
     Returns a list of dicts: [{'ph_text': ..., 'avg_color': [B, G, R], 'rect': (x1, y1, x2, y2)}, ...]
+    Only includes boxes with valid pH text (numeric, between 0-14).
     """
     results = []
     for box in color_boxes:
+        # Filter: only keep valid pH values (numeric strings that can be converted to float 0-14)
+        ph_text = box['ph_text']
+        try:
+            ph_value = float(ph_text)
+            if not (0 <= ph_value <= 14):
+                print(f"Skipping invalid pH value (out of range): {ph_text}")
+                continue
+        except ValueError:
+            print(f"Skipping non-numeric pH text: {ph_text}")
+            continue
+        
         x1, y1, x2, y2 = box['rect']
         # Clamp to image bounds
         x1c, y1c, x2c, y2c = max(0, x1), max(0, y1), min(image.shape[1], x2), min(image.shape[0], y2)
@@ -420,7 +433,7 @@ def ph_from_image(image_path, return_all_color_spaces=False, output_dir=None, in
     # --- STEP 3: Get average colors ---
     avg_colors = get_average_colors(image, color_boxes)
     # --- STEP 4: Find pH using different color spaces ---
-    avg_bgr, box_coords, roi = get_average_color_of_box(image, 750, 1100, 150, 300) # this is the box of pH strip
+    avg_bgr, box_coords, roi = get_average_color_of_box(image, 1350, 1250, 150, 300) # this is the box of pH strip - adjusted for left side pink strip
     
     if return_all_color_spaces:
         # Calculate pH for all three color spaces

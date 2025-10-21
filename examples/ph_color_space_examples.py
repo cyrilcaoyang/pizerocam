@@ -22,7 +22,7 @@ def example_1_basic_usage():
     print("="*70)
     
     client = ImageReqClient()
-    client.connect("192.168.1.100")
+    client.connect("172.31.34.163")
     
     # Request and analyze photo - returns dict with RGB, LAB, and HSV
     image_path, ph_result = client.request_and_analyze_photo()
@@ -66,7 +66,7 @@ def example_3_use_specific_color_space():
     print("="*70)
     
     client = ImageReqClient()
-    client.connect("192.168.1.100")
+    client.connect("172.31.34.163")
     
     image_path, ph_result = client.request_and_analyze_photo()
     
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     print("  - RGB: Standard red-green-blue color space")
     print("  - LAB: Perceptually uniform color space (best for color matching)")
     print("  - HSV: Hue-saturation-value color space")
-    print("\nNote: Update the IP address '192.168.1.100' to your server's IP")
+    print("\nNote: Update the IP address '172.31.34.163' to your server's IP")
     print("="*70)
     
     # Run examples
